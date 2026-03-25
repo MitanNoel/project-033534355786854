@@ -38,11 +38,14 @@
                                 <th>Precision</th>
                                 <th>Recall</th>
                                 <th>F1-Score</th>
+                                <th>Training Time</th>
                                 <th>Status</th>
+                                <th>Detail</th>
                             </tr >
                         </thead>
                         <tbody>
                             {% for model in comparison_data %}
+                            {% set rank = loop.index %}
                             <tr {% if best_model and model['scenario_id'] == best_model['scenario_id'] and model['algorithm_id'] == best_model['algorithm_id'] %}class="table-success"{% endif %}>
                                 <td>{{ model['scenario'] }}</td>
                                 <td>{{ model['algorithm'] }}</td>
@@ -50,14 +53,42 @@
                                 <td>{{ "%.4f"|format(model['precision']) }}</td>
                                 <td>{{ "%.4f"|format(model['recall']) }}</td>
                                 <td>{{ "%.4f"|format(model['f1_score']) }}</td>
+                                <td>{{ "%.2f"|format(model.get('training_time', 0)) }}s</td>
                                 <td>
                                     {% if best_model and model['scenario_id'] == best_model['scenario_id'] and model['algorithm_id'] == best_model['algorithm_id'] %}
                                     <span class="badge bg-success">
                                         <i class="bi bi-star-fill"></i> Best
                                     </span>
+                                    {% elif rank == 2 %}
+                                    <span class="badge bg-info">
+                                        <i class="bi bi-award"></i> 2nd
+                                    </span>
+                                    {% elif rank == 3 %}
+                                    <span class="badge bg-primary">
+                                        <i class="bi bi-award"></i> 3rd
+                                    </span>
+                                    {% elif model['f1_score'] >= 0.85 %}
+                                    <span class="badge bg-success" style="opacity: 0.7;">
+                                        Excellent
+                                    </span>
+                                    {% elif model['f1_score'] >= 0.75 %}
+                                    <span class="badge bg-info">
+                                        Good
+                                    </span>
+                                    {% elif model['f1_score'] >= 0.65 %}
+                                    <span class="badge bg-warning">
+                                        Fair
+                                    </span>
                                     {% else %}
-                                    <span class="badge bg-secondary">-</span>
+                                    <span class="badge bg-secondary">
+                                        Needs Improvement
+                                    </span>
                                     {% endif %}
+                                </td>
+                                <td>
+                                    <button class="btn btn-sm btn-info" onclick="showDetails({{ loop.index0 }})">
+                                        <i class="bi bi-eye"></i> Lihat
+                                    </button>
                                 </td>
                             </tr>
                             {% endfor %}
@@ -73,6 +104,40 @@
             </div>
             <div class="card-body">
                 <canvas id="comparisonChart" height="100"></canvas>
+            </div>
+        </div>
+
+        <!-- Detail Modal -->
+        <div class="modal fade" id="detailModal" tabindex="-1">
+            <div class="modal-dialog modal-xl">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="detailModalTitle">Detail Metrik Model</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="row">
+                            <div class="col-md-12">
+                                <h6 class="text-primary">Per-Class Metrics</h6>
+                                <div class="table-responsive">
+                                    <table class="table table-sm table-bordered" id="perClassTable">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th>Emotion</th>
+                                                <th>Precision</th>
+                                                <th>Recall</th>
+                                                <th>F1-Score</th>
+                                                <th>Support</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="perClassBody">
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -93,6 +158,8 @@ const comparisonData = {{ comparison_data | tojson }};
 const labels = comparisonData.map(m => `${m.scenario} - ${m.algorithm}`);
 const accuracyData = comparisonData.map(m => m.accuracy);
 const f1Data = comparisonData.map(m => m.f1_score);
+const precisionData = comparisonData.map(m => m.precision);
+const recallData = comparisonData.map(m => m.recall);
 
 // Create chart
 const ctx = document.getElementById('comparisonChart').getContext('2d');
@@ -106,6 +173,20 @@ new Chart(ctx, {
                 data: accuracyData,
                 backgroundColor: 'rgba(54, 162, 235, 0.7)',
                 borderColor: 'rgba(54, 162, 235, 1)',
+                borderWidth: 1
+            },
+            {
+                label: 'Precision',
+                data: precisionData,
+                backgroundColor: 'rgba(255, 206, 86, 0.7)',
+                borderColor: 'rgba(255, 206, 86, 1)',
+                borderWidth: 1
+            },
+            {
+                label: 'Recall',
+                data: recallData,
+                backgroundColor: 'rgba(255, 99, 132, 0.7)',
+                borderColor: 'rgba(255, 99, 132, 1)',
                 borderWidth: 1
             },
             {
@@ -137,7 +218,7 @@ new Chart(ctx, {
             },
             title: {
                 display: true,
-                text: 'Perbandingan Performa Model'
+                text: 'Perbandingan Performa Model (Semua Metrik)'
             },
             tooltip: {
                 callbacks: {
@@ -149,5 +230,36 @@ new Chart(ctx, {
         }
     }
 });
+
+// Function to show model details
+function showDetails(index) {
+    const model = comparisonData[index];
+    const modalTitle = document.getElementById('detailModalTitle');
+    modalTitle.textContent = `Detail: ${model.scenario} - ${model.algorithm}`;
+    
+    // Populate per-class metrics
+    const perClassBody = document.getElementById('perClassBody');
+    perClassBody.innerHTML = '';
+    
+    if (model.per_class && Object.keys(model.per_class).length > 0) {
+        for (const [emotion, metrics] of Object.entries(model.per_class)) {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td><strong>${emotion}</strong></td>
+                <td>${(metrics.precision * 100).toFixed(2)}%</td>
+                <td>${(metrics.recall * 100).toFixed(2)}%</td>
+                <td>${(metrics.f1_score * 100).toFixed(2)}%</td>
+                <td>${metrics.support}</td>
+            `;
+            perClassBody.appendChild(row);
+        }
+    } else {
+        perClassBody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No per-class data available</td></tr>';
+    }
+    
+    // Show modal
+    const modal = new bootstrap.Modal(document.getElementById('detailModal'));
+    modal.show();
+}
 </script>
 {% endblock %}

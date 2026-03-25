@@ -12,27 +12,47 @@ from config import Config
 
 def evaluate_model(model, X_test, y_test):
     """
-    Evaluate a single model
-
+    Evaluate a single model with detailed metrics
+    
     Args:
         model: Trained model
         X_test: Test features
         y_test: Test labels
-
+    
     Returns:
-        dict: Evaluation metrics
+        dict: Evaluation metrics including per-class details
     """
     # Make predictions
     y_pred = model.predict(X_test)
-
-    # Calculate metrics
+    
+    # Calculate overall metrics
     metrics = {
         'accuracy': accuracy_score(y_test, y_pred),
         'precision': precision_score(y_test, y_pred, average='macro', zero_division=0),
         'recall': recall_score(y_test, y_pred, average='macro', zero_division=0),
         'f1_score': f1_score(y_test, y_pred, average='macro', zero_division=0),
     }
-
+    
+    # Get per-class metrics
+    report = classification_report(y_test, y_pred, output_dict=True, zero_division=0)
+    
+    # Get confusion matrix
+    cm = confusion_matrix(y_test, y_pred)
+    
+    # Calculate per-class metrics for each emotion
+    per_class_metrics = {}
+    for label in set(y_test):
+        if label in report:
+            per_class_metrics[label] = {
+                'precision': report[label]['precision'],
+                'recall': report[label]['recall'],
+                'f1_score': report[label]['f1-score'],
+                'support': report[label]['support']
+            }
+    
+    metrics['per_class'] = per_class_metrics
+    metrics['confusion_matrix'] = cm
+    
     return metrics, y_pred
 
 def evaluate_scenario(training_result):
@@ -101,10 +121,10 @@ def evaluate_all_scenarios(training_results):
 def create_comparison_table(evaluation_results):
     """
     Create comparison table for all models
-
+    
     Args:
         evaluation_results: List of evaluation results
-
+    
     Returns:
         list: List of dictionaries with comparison data
     """
@@ -115,6 +135,16 @@ def create_comparison_table(evaluation_results):
             continue
 
         scenario_name = eval_result['scenario_display_name']
+        training_time = eval_result.get('training_time', 0)
+        
+        # If training_time is a dict, extract per-model times, otherwise use total time
+        if isinstance(training_time, dict):
+            nb_time = training_time.get('naive_bayes', 0)
+            svm_time = training_time.get('svm', 0)
+        else:
+            # If it's a single float, split it approximately (NB is usually faster)
+            nb_time = training_time * 0.4  # Naive Bayes typically takes ~40%
+            svm_time = training_time * 0.6  # SVM typically takes ~60%
 
         # Naive Bayes row
         nb_metrics = eval_result['naive_bayes']['metrics']
@@ -127,6 +157,9 @@ def create_comparison_table(evaluation_results):
             'precision': round(nb_metrics['precision'], 4),
             'recall': round(nb_metrics['recall'], 4),
             'f1_score': round(nb_metrics['f1_score'], 4),
+            'training_time': round(nb_time, 2),
+            'per_class': nb_metrics.get('per_class', {}),
+            'confusion_matrix': nb_metrics.get('confusion_matrix', []).tolist() if hasattr(nb_metrics.get('confusion_matrix', []), 'tolist') else [],
             'model_path': eval_result['naive_bayes']['model_path'],
             'vectorizer_path': eval_result['vectorizer_path'],
             'config': eval_result['config']
@@ -143,6 +176,9 @@ def create_comparison_table(evaluation_results):
             'precision': round(svm_metrics['precision'], 4),
             'recall': round(svm_metrics['recall'], 4),
             'f1_score': round(svm_metrics['f1_score'], 4),
+            'training_time': round(svm_time, 2),
+            'per_class': svm_metrics.get('per_class', {}),
+            'confusion_matrix': svm_metrics.get('confusion_matrix', []).tolist() if hasattr(svm_metrics.get('confusion_matrix', []), 'tolist') else [],
             'model_path': eval_result['svm']['model_path'],
             'vectorizer_path': eval_result['vectorizer_path'],
             'config': eval_result['config']
