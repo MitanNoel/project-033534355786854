@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+
+{% block title %}Training Model - Deteksi Emosi{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-10">
+        <h2 class="mb-4">
+            <i class="bi bi-cpu"></i> Training Model
+        </h2>
+
+        <div class="card shadow">
+            <div class="card-body p-4">
+                <form method="POST" id="trainingForm">
+                    <h5 class="mb-3">Pilih Skenario untuk Dilatih</h5>
+                    <p class="text-muted">Setiap skenario akan melatih 2 model (Naive Bayes dan SVM)</p>
+
+                    <div class="row g-3 mb-4">
+                        {% for scenario_id, scenario in scenarios.items() %}
+                        <div class="col-md-6">
+                            <div class="card h-100 scenario-card">
+                                <div class="card-body">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="scenarios"
+                                               value="{{ scenario_id }}" id="{{ scenario_id }}" checked>
+                                        <label class="form-check-label fw-bold" for="{{ scenario_id }}">
+                                            {{ scenario['name'] }}
+                                        </label>
+                                    </div>
+                                    <p class="text-muted small mt-2 mb-2">{{ scenario['description'] }}</p>
+
+                                    <div class="small">
+                                        <strong>Preprocessing:</strong>
+                                        <ul class="mb-2">
+                                            {% if scenario['preprocessing']['lowercase'] %}
+                                            <li>Lowercase</li>
+                                            {% endif %}
+                                            {% if scenario['preprocessing']['remove_stopwords'] %}
+                                            <li>Hapus Stopwords</li>
+                                            {% endif %}
+                                            {% if scenario['preprocessing']['stemming'] %}
+                                            <li>Stemming</li>
+                                            {% endif %}
+                                        </ul>
+
+                                        <strong>Vektorisasi:</strong><br>
+                                        {{ scenario['vectorization']['method']|upper }}
+                                        ({{ scenario['vectorization']['ngram_range'][0] }}-{{ scenario['vectorization']['ngram_range'][1] }} gram,
+                                        {{ scenario['vectorization']['max_features'] }} features)
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle"></i>
+                        <strong>Catatan:</strong> Proses training mungkin membutuhkan beberapa menit tergantung ukuran data.
+                        Total 8 model akan dilatih (4 skenario × 2 algoritma).
+                    </div>
+
+                    <button type="submit" class="btn btn-primary btn-lg w-100" id="trainingBtn">
+                        <i class="bi bi-play-circle"></i> Mulai Pelatihan
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.getElementById('trainingForm').addEventListener('submit', function(e) {
+    const btn = document.getElementById('trainingBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Training sedang berjalan...';
+});
+</script>
+{% endblock %}

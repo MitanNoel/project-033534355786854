@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+
+{% block title %}Hasil Prediksi - Deteksi Emosi{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-10">
+        <h2 class="mb-4">
+            <i class="bi bi-check-circle"></i> Hasil Prediksi
+        </h2>
+
+        <div class="alert alert-success shadow mb-4">
+            <h6 class="alert-heading">
+                <i class="bi bi-info-circle"></i> Informasi Model
+            </h6>
+            <p class="mb-0">
+                <strong>Skenario:</strong> {{ model_info['scenario'] }} |
+                <strong>Algoritma:</strong> {{ model_info['algorithm'] }} |
+                <strong>Accuracy:</strong> {{ "%.4f"|format(model_info['accuracy']) }}
+            </p>
+        </div>
+
+        <div class="card shadow mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">Hasil Prediksi Emosi</h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width: 5%;">No</th>
+                                <th style="width: 70%;">Teks Input</th>
+                                <th style="width: 25%;">Emosi yang Diprediksi</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for prediction in predictions %}
+                            <tr>
+                                <td class="align-middle text-center">
+                                    <strong>{{ prediction['no'] }}</strong>
+                                </td>
+                                <td class="align-middle">
+                                    {{ prediction['text'] }}
+                                </td>
+                                <td class="align-middle text-center">
+                                    {% set emotion = prediction['emotion']|lower %}
+                                    {% if emotion_colors[emotion] %}
+                                    <span class="badge fs-6" style="background-color: {{ emotion_colors[emotion] }};">
+                                        {{ prediction['emotion']|capitalize }}
+                                    </span>
+                                    {% else %}
+                                    <span class="badge bg-secondary fs-6">
+                                        {{ prediction['emotion']|capitalize }}
+                                    </span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="row g-2">
+            <div class="col-md-6">
+                <a href="{{ url_for('prediction') }}" class="btn btn-outline-primary w-100 btn-lg">
+                    <i class="bi bi-arrow-left-circle"></i> Prediksi Lagi
+                </a>
+            </div>
+            <div class="col-md-6">
+                <a href="{{ url_for('index') }}" class="btn btn-primary w-100 btn-lg">
+                    <i class="bi bi-house"></i> Kembali ke Beranda
+                </a>
+            </div>
+        </div>
+
+        <div class="card mt-4">
+            <div class="card-body">
+                <h6 class="card-title">Legenda Emosi:</h6>
+                <div class="d-flex flex-wrap gap-2">
+                    {% for emotion, color in emotion_colors.items() %}
+                    <span class="badge fs-6" style="background-color: {{ color }};">
+                        {{ emotion|capitalize }}
+                    </span>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

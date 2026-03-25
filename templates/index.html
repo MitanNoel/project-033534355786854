@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+
+{% block title %}Beranda - Deteksi Emosi{% endblock %}
+
+{% block content %}
+<div class="text-center mb-5">
+    <h1 class="display-4 mb-3">
+        <i class="bi bi-emoji-smile text-primary"></i>
+        Sistem Deteksi Emosi Teks Indonesia
+    </h1>
+    <p class="lead text-muted">
+        Aplikasi untuk klasifikasi emosi pada teks berbahasa Indonesia menggunakan<br>
+        Machine Learning dengan algoritma Naive Bayes dan SVM
+    </p>
+</div>
+
+<div class="row justify-content-center mb-5">
+    <div class="col-md-10">
+        <div class="card shadow">
+            <div class="card-body p-4">
+                <h4 class="card-title mb-4">Alur Kerja Sistem</h4>
+
+                <div class="workflow-steps">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <div class="workflow-step">
+                                <div class="step-number">1</div>
+                                <i class="bi bi-file-earmark-arrow-up step-icon text-primary"></i>
+                                <h5>Upload Data</h5>
+                                <p class="text-muted">Upload file CSV berisi teks dan label emosi (minimal 800 data)</p>
+                            </div>
+                        </div>
+
+                        <div class="col-md-4">
+                            <div class="workflow-step">
+                                <div class="step-number">2</div>
+                                <i class="bi bi-gear step-icon text-success"></i>
+                                <h5>Preprocessing</h5>
+                                <p class="text-muted">Konfigurasi preprocessing teks (lowercase, stopwords, stemming)</p>
+                            </div>
+                        </div>
+
+                        <div class="col-md-4">
+                            <div class="workflow-step">
+                                <div class="step-number">3</div>
+                                <i class="bi bi-cpu step-icon text-info"></i>
+                                <h5>Training Model</h5>
+                                <p class="text-muted">Latih model dengan 4 skenario berbeda (NB & SVM)</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row g-3 mt-3">
+                        <div class="col-md-6">
+                            <div class="workflow-step">
+                                <div class="step-number">4</div>
+                                <i class="bi bi-bar-chart step-icon text-warning"></i>
+                                <h5>Evaluasi Model</h5>
+                                <p class="text-muted">Bandingkan performa semua model dan pilih yang terbaik</p>
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <div class="workflow-step">
+                                <div class="step-number">5</div>
+                                <i class="bi bi-chat-left-text step-icon text-danger"></i>
+                                <h5>Prediksi</h5>
+                                <p class="text-muted">Gunakan model terbaik untuk memprediksi emosi teks baru</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row justify-content-center mb-4">
+    <div class="col-md-8">
+        <div class="card border-primary">
+            <div class="card-body text-center p-5">
+                <h4 class="mb-3">Siap Memulai?</h4>
+                <p class="text-muted mb-4">
+                    Upload file CSV Anda dan mulai proses deteksi emosi
+                </p>
+                <a href="{{ url_for('upload') }}" class="btn btn-primary btn-lg px-5">
+                    <i class="bi bi-arrow-right-circle"></i> Mulai
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-5">
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="text-center mb-3">
+                    <i class="bi bi-lightbulb text-primary" style="font-size: 3rem;"></i>
+                </div>
+                <h5 class="card-title text-center">4 Skenario Model</h5>
+                <p class="card-text text-center text-muted">
+                    Menggunakan 4 skenario berbeda dengan konfigurasi preprocessing dan feature extraction yang bervariasi
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="text-center mb-3">
+                    <i class="bi bi-check2-circle text-success" style="font-size: 3rem;"></i>
+                </div>
+                <h5 class="card-title text-center">2 Algoritma</h5>
+                <p class="card-text text-center text-muted">
+                    Membandingkan performa Multinomial Naive Bayes dan Support Vector Machine (SVM)
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="text-center mb-3">
+                    <i class="bi bi-translate text-info" style="font-size: 3rem;"></i>
+                </div>
+                <h5 class="card-title text-center">Bahasa Indonesia</h5>
+                <p class="card-text text-center text-muted">
+                    Menggunakan Sastrawi untuk stemming dan stopword removal khusus bahasa Indonesia
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

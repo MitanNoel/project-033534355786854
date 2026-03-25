@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+
+{% block title %}Preprocessing - Deteksi Emosi{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-10">
+        <h2 class="mb-4">
+            <i class="bi bi-gear"></i> Konfigurasi Preprocessing
+        </h2>
+
+        <div class="card shadow">
+            <div class="card-body p-4">
+                <form method="POST" id="preprocessingForm">
+                    <h5 class="mb-3">Pilih Langkah Preprocessing</h5>
+
+                    <div class="list-group mb-4">
+                        <label class="list-group-item">
+                            <input class="form-check-input me-2" type="checkbox" name="lowercase" value="true" checked>
+                            <strong>Lowercase</strong>
+                            <div class="text-muted small">Mengubah semua teks menjadi huruf kecil</div>
+                        </label>
+
+                        <label class="list-group-item">
+                            <input class="form-check-input me-2" type="checkbox" name="remove_punctuation" value="true" checked>
+                            <strong>Hapus Tanda Baca</strong>
+                            <div class="text-muted small">Menghapus tanda baca seperti . , ! ? dll</div>
+                        </label>
+
+                        <label class="list-group-item">
+                            <input class="form-check-input me-2" type="checkbox" name="remove_numbers" value="true" checked>
+                            <strong>Hapus Angka</strong>
+                            <div class="text-muted small">Menghapus angka dari teks</div>
+                        </label>
+
+                        <label class="list-group-item">
+                            <input class="form-check-input me-2" type="checkbox" name="remove_stopwords" value="true">
+                            <strong>Hapus Stopwords</strong>
+                            <div class="text-muted small">Menghapus kata-kata umum bahasa Indonesia (dan, yang, untuk, dll)</div>
+                        </label>
+
+                        <label class="list-group-item">
+                            <input class="form-check-input me-2" type="checkbox" name="stemming" value="true">
+                            <strong>Stemming (Sastrawi)</strong>
+                            <div class="text-muted small">Mengubah kata ke bentuk dasarnya (contoh: "berlari" → "lari")</div>
+                        </label>
+                    </div>
+
+                    <div class="card bg-light mb-4">
+                        <div class="card-body">
+                            <h6 class="card-title">Preview Preprocessing</h6>
+                            <div class="mb-2">
+                                <label class="form-label fw-bold">Teks Asli:</label>
+                                <textarea class="form-control" id="sampleText" rows="2">{{ sample_text }}</textarea>
+                            </div>
+                            <button type="button" class="btn btn-sm btn-outline-primary mb-2" id="previewBtn">
+                                <i class="bi bi-eye"></i> Preview Hasil
+                            </button>
+                            <div id="previewResult" class="d-none">
+                                <label class="form-label fw-bold">Teks Setelah Preprocessing:</label>
+                                <div class="alert alert-info mb-0" id="processedText"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-success btn-lg w-100">
+                        <i class="bi bi-arrow-right-circle"></i> Lanjutkan ke Training
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.getElementById('previewBtn').addEventListener('click', function() {
+    const text = document.getElementById('sampleText').value;
+    const config = {
+        lowercase: document.querySelector('input[name="lowercase"]').checked,
+        remove_punctuation: document.querySelector('input[name="remove_punctuation"]').checked,
+        remove_numbers: document.querySelector('input[name="remove_numbers"]').checked,
+        remove_stopwords: document.querySelector('input[name="remove_stopwords"]').checked,
+        stemming: document.querySelector('input[name="stemming"]').checked
+    };
+
+    fetch('{{ url_for("preview_preprocessing") }}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ text: text, config: config })
+    })
+    .then(response => response.json())
+    .then(data => {
+        document.getElementById('processedText').textContent = data.processed;
+        document.getElementById('previewResult').classList.remove('d-none');
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Terjadi kesalahan saat preview');
+    });
+});
+</script>
+{% endblock %}

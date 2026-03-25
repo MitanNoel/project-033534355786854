@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+
+{% block title %}Evaluasi Model - Deteksi Emosi{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-12">
+        <h2 class="mb-4">
+            <i class="bi bi-bar-chart"></i> Evaluasi Model
+        </h2>
+
+        {% if best_model %}
+        <div class="alert alert-success shadow">
+            <h5 class="alert-heading">
+                <i class="bi bi-trophy"></i> Model Terbaik
+            </h5>
+            <p class="mb-0">
+                <strong>{{ best_model['scenario'] }}</strong> - <strong>{{ best_model['algorithm'] }}</strong>
+                <br>
+                F1-Score: <span class="badge bg-success fs -6">{{ "%.4f"|format(best_model['f1_score']) }}</span>
+                Accuracy: <span class="badge bg-success fs-6">{{ "%.4f"|format(best_model['accuracy']) }}</span>
+            </p>
+        </div>
+        {% endif %}
+
+        <div class="card shadow mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">Tabel Perbandingan Model</h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover table-striped mb-0">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>Skenario</th>
+                                <th>Algoritma</th>
+                                <th>Accuracy</th>
+                                <th>Precision</th>
+                                <th>Recall</th>
+                                <th>F1-Score</th>
+                                <th>Status</th>
+                            </tr >
+                        </thead>
+                        <tbody>
+                            {% for model in comparison_data %}
+                            <tr {% if best_model and model['scenario_id'] == best_model['scenario_id'] and model['algorithm_id'] == best_model['algorithm_id'] %}class="table-success"{% endif %}>
+                                <td>{{ model['scenario'] }}</td>
+                                <td>{{ model['algorithm'] }}</td>
+                                <td>{{ "%.4f"|format(model['accuracy']) }}</td>
+                                <td>{{ "%.4f"|format(model['precision']) }}</td>
+                                <td>{{ "%.4f"|format(model['recall']) }}</td>
+                                <td>{{ "%.4f"|format(model['f1_score']) }}</td>
+                                <td>
+                                    {% if best_model and model['scenario_id'] == best_model['scenario_id'] and model['algorithm_id'] == best_model['algorithm_id'] %}
+                                    <span class="badge bg-success">
+                                        <i class="bi bi-star-fill"></i> Best
+                                    </span>
+                                    {% else %}
+                                    <span class="badge bg-secondary">-</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="card shadow mb-4">
+            <div class="card-header bg-secondary text-white">
+                <h5 class="mb-0">Visualisasi Perbandingan</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="comparisonChart" height="100"></canvas>
+            </div>
+        </div>
+
+        <div class="text-center">
+            <a href="{{ url_for('prediction') }}" class="btn btn-success btn-lg px-5">
+                <i class="bi bi-arrow-right-circle"></i> Lanjut ke Prediksi
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Prepare data for chart
+const comparisonData = {{ comparison_data | tojson }};
+
+const labels = comparisonData.map(m => `${m.scenario} - ${m.algorithm}`);
+const accuracyData = comparisonData.map(m => m.accuracy);
+const f1Data = comparisonData.map(m => m.f1_score);
+
+// Create chart
+const ctx = document.getElementById('comparisonChart').getContext('2d');
+new Chart(ctx, {
+    type: 'bar',
+    data: {
+        labels: labels,
+        datasets: [
+            {
+                label: 'Accuracy',
+                data: accuracyData,
+                backgroundColor: 'rgba(54, 162, 235, 0.7)',
+                borderColor: 'rgba(54, 162, 235, 1)',
+                borderWidth: 1
+            },
+            {
+                label: 'F1-Score',
+                data: f1Data,
+                backgroundColor: 'rgba(75, 192, 192, 0.7)',
+                borderColor: 'rgba(75, 192, 192, 1)',
+                borderWidth: 1
+            }
+        ]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        scales: {
+            y: {
+                beginAtZero: true,
+                max: 1,
+                ticks: {
+                    callback: function(value) {
+                        return (value * 100).toFixed(0) + '%';
+                    }
+                }
+            }
+        },
+        plugins: {
+            legend: {
+                position: 'top',
+            },
+            title: {
+                display: true,
+                text: 'Perbandingan Performa Model'
+            },
+            tooltip: {
+                callbacks: {
+                    label: function(context) {
+                        return context.dataset.label + ': ' + (context.parsed.y * 100).toFixed(2) + '%';
+                    }
+                }
+            }
+        }
+    }
+});
+</script>
+{% endblock %}

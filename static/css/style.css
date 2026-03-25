@@ -1,0 +1,298 @@
+/* Custom styles for Indonesian Emotion Detection App */
+
+/* Root variables */
+:root {
+    --primary-color: #0d6efd;
+    --success-color: #198754;
+    --warning-color: #ffc107;
+    --danger-color: #dc3545;
+    --info-color: #0dcaf0;
+}
+
+/* Body */
+body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+main {
+    flex: 1;
+}
+
+/* Workflow Steps */
+.workflow-steps {
+    padding: 20px 0;
+}
+
+.workflow-step {
+    text-align: center;
+    padding: 20px;
+    border-radius: 10px;
+    background: #f8f9fa;
+    height: 100%;
+    transition: all 0.3s ease;
+}
+
+.workflow-step:hover {
+    background: #e9ecef;
+    transform: translateY(-5px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.step-number {
+    display: inline-block;
+    width: 35px;
+    height: 35px;
+    line-height: 35px;
+    border-radius: 50%;
+    background: var(--primary-color);
+    color: white;
+    font-weight: bold;
+    margin-bottom: 10px;
+}
+
+.step-icon {
+    font-size: 3rem;
+    margin: 15px 0;
+}
+
+/* Cards */
+.card {
+    border: none;
+    border-radius: 10px;
+}
+
+.shadow {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
+}
+
+.card-header {
+    border-radius: 10px 10px 0 0 !important;
+}
+
+/* Scenario Cards */
+.scenario-card {
+    border: 2px solid #e9ecef;
+    transition: all 0.3s ease;
+}
+
+.scenario-card:hover {
+    border-color: var(--primary-color);
+    box-shadow: 0 4px 12px rgba(13, 110, 253, 0.2);
+}
+
+.scenario-card .form-check-input:checked ~ .form-check-label {
+    color: var(--primary-color);
+}
+
+/* Tables */
+.table-hover tbody tr:hover {
+    background-color: rgba(13, 110, 253, 0.05);
+}
+
+.table-success {
+    background-color: rgba(25, 135, 84, 0.2) !important;
+}
+
+.table-success:hover {
+    background-color: rgba(25, 135, 84, 0.3) !important;
+}
+
+/* Emotion Badges */
+.emotion-badge {
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-weight: 500;
+    display: inline-block;
+}
+
+/* Buttons */
+.btn {
+    border-radius: 8px;
+    padding: 10px 20px;
+    font-weight: 500;
+    transition: all 0.3s ease;
+}
+
+.btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+.btn-lg {
+    padding: 12px 30px;
+    font-size: 1.1rem;
+}
+
+/* Forms */
+.form-control:focus,
+.form-select:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+}
+
+.form-check-input:checked {
+    background-color: var(--primary-color);
+    border-color: var(--primary-color);
+}
+
+/* List Group */
+.list-group-item {
+    border: 1px solid #dee2e6;
+    transition: all 0.2s ease;
+}
+
+.list-group-item:hover {
+    background-color: #f8f9fa;
+}
+
+.list-group-item .form-check-input:checked {
+    background-color: var(--success-color);
+    border-color: var(--success-color);
+}
+
+/* Alerts */
+.alert {
+    border-radius: 10px;
+    border: none;
+}
+
+.alert-success {
+    background-color: #d1e7dd;
+    color: #0f5132;
+}
+
+.alert-info {
+    background-color: #cff4fc;
+    color: #055160;
+}
+
+.alert-warning {
+    background-color: #fff3cd;
+    color: #664d03;
+}
+
+.alert-danger {
+    background-color: #f8d7da;
+    color: #842029;
+}
+
+/* Navbar */
+.navbar {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.navbar-brand {
+    font-weight: 600;
+    font-size: 1.3rem;
+}
+
+/* Footer */
+footer {
+    margin-top: auto;
+    border-top: 1px solid #dee2e6;
+}
+
+/* Loading Spinner */
+.spinner-border-sm {
+    width: 1rem;
+    height: 1rem;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .workflow-step {
+        margin-bottom: 15px;
+    }
+
+    .step-icon {
+        font-size: 2rem;
+    }
+
+    h1.display-4 {
+        font-size: 2rem;
+    }
+
+    .btn-lg {
+        font-size: 1rem;
+        padding: 10px 20px;
+    }
+}
+
+/* Table responsive scrolling */
+.table-responsive {
+    border-radius: 10px;
+}
+
+/* Badge styling */
+.badge {
+    padding: 6px 12px;
+    font-weight: 500;
+}
+
+.badge.fs-6 {
+    font-size: 0.95rem !important;
+}
+
+/* Chart container */
+canvas {
+    max-height: 400px;
+}
+
+/* File upload styling */
+.form-control[type="file"] {
+    cursor: pointer;
+}
+
+.form-control[type="file"]::-webkit-file-upload-button {
+    padding: 8px 16px;
+    border-radius: 6px;
+    border: none;
+    background-color: var(--primary-color);
+    color: white;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.form-control[type="file"]::-webkit-file-upload-button:hover {
+    background-color: #0b5ed7;
+}
+
+/* Textarea styling */
+textarea.form-control {
+    resize: vertical;
+    min-height: 60px;
+}
+
+/* Animation for page transitions */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.card,
+.alert {
+    animation: fadeIn 0.5s ease-in-out;
+}
+
+/* Print styles */
+@media print {
+    .navbar,
+    footer,
+    .btn,
+    .alert {
+        display: none;
+    }
+
+    .card {
+        box-shadow: none;
+        border: 1px solid #dee2e6;
+    }
+}

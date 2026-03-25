@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+
+{% block title %}Upload Data - Deteksi Emosi{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-10">
+        <h2 class="mb-4">
+            <i class="bi bi-file-earmark-arrow-up"></i> Upload Data CSV
+        </h2>
+
+        {% if not uploaded %}
+        <!-- Upload Form -->
+        <div class="card shadow">
+            <div class="card-body p-4">
+                <form method="POST" enctype="multipart/form-data" id="uploadForm">
+                    <div class="mb-4">
+                        <label for="file" class="form-label fw-bold">Pilih File CSV</label>
+                        <input class="form-control form-control-lg" type="file" id="file" name="file" accept=".csv" required>
+                        <div class="form-text">
+                            <i class="bi bi-info-circle"></i> File harus berformat CSV dengan minimal 800 baris data
+                        </div>
+                    </div>
+
+                    <div class="alert alert-info">
+                        <h6 class="alert-heading">
+                            <i class="bi bi-info-circle"></i> Format File CSV
+                        </h6>
+                        <p class="mb-2">File CSV harus memiliki:</p>
+                        <ul class="mb-0">
+                            <li>Kolom untuk <strong>teks</strong> (berisi kalimat/paragraf dalam bahasa Indonesia)</li>
+                            <li>Kolom untuk <strong>label emosi</strong> (contoh: happy, sadness, anger, fear, love)</li>
+                            <li>Minimal <strong>800 baris data</strong></li>
+                        </ul>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary btn-lg w-100">
+                        <i class="bi bi-cloud-upload"></i> Upload File
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        {% else %}
+        <!-- File Uploaded - Show Preview -->
+        <div class="alert alert-success">
+            <i class="bi bi-check-circle"></i> File <strong>{{ filename }}</strong> berhasil diupload!
+            Total baris: <strong>{{ total_rows }}</strong>
+        </div>
+
+        <div class="card shadow mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">Preview Data (10 baris pertama)</h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover mb-0">
+                        <thead>
+                            <tr>
+                                {% for col in columns %}
+                                <th>{{ col }}</th>
+                                {% endfor %}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in preview_data %}
+                            <tr>
+                                {% for col in columns %}
+                                <td>{{ row[col] }}</td>
+                                {% endfor %}
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Column Selection Form -->
+        <div class="card shadow">
+            <div class="card-header bg-secondary text-white">
+                <h5 class="mb-0">Pilih Kolom</h5>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('select_columns') }}">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="text_col" class="form-label fw-bold">Kolom Teks</label>
+                                <select class="form-select" id="text_col" name="text_col" required>
+                                    <option value="">-- Pilih Kolom --</option>
+                                    {% for col in columns %}
+                                    <option value="{{ col }}">{{ col }}</option>
+                                    {% endfor %}
+                                </select>
+                                <div class="form-text">Kolom yang berisi teks untuk dianalisis</div>
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="label_col" class="form-label fw-bold">Kolom Label Emosi</label>
+                                <select class="form-select" id="label_col" name="label_col" required>
+                                    <option value="">-- Pilih Kolom --</option>
+                                    {% for col in columns %}
+                                    <option value="{{ col }}">{{ col }}</option>
+                                    {% endfor %}
+                                </select>
+                                <div class="form-text">Kolom yang berisi label emosi</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-success btn-lg w-100">
+                        <i class="bi bi-arrow-right-circle"></i> Lanjutkan ke Preprocessing
+                    </button>
+                </form>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

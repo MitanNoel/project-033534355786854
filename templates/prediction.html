@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+
+{% block title %}Prediksi - Deteksi Emosi{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-10">
+        <h2 class="mb-4">
+            <i class="bi bi-chat-left-text"></i> Prediksi Emosi
+        </h2>
+
+        <div class="alert alert-info shadow mb-4">
+            <h6 class="alert-heading">
+                <i class="bi bi-info-circle"></i> Informasi Model
+            </h6>
+            <p class="mb-1">
+                <strong>Skenario:</strong> {{ model_info['scenario'] }}<br>
+                <strong>Algoritma:</strong> {{ model_info['algorithm'] }}<br>
+                <strong>Accuracy:</strong> {{ "%.4f"|format(model_info['accuracy']) }} |
+                <strong>F1-Score:</strong> {{ "%.4f"|format(model_info['f1_score']) }}
+            </p>
+        </div>
+
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">Masukkan Teks untuk Diprediksi</h5>
+            </div>
+            <div class="card-body p-4">
+                <form method="POST" id="predictionForm">
+                    <p class="text-muted mb-4">
+                        Masukkan hingga 5 teks dalam bahasa Indonesia untuk diprediksi emosinya
+                    </p>
+
+                    {% for i in range(1, 6) %}
+                    <div class="mb-3">
+                        <label for="text_{{ i }}" class="form-label fw-bold">Teks {{ i }}</label>
+                        <textarea class="form-control" id="text_{{ i }}" name="text_{{ i }}"
+                                  rows="2" placeholder="Masukkan teks dalam bahasa Indonesia..."
+                                  {% if i == 1 %}required{% endif %}></textarea>
+                    </div>
+                    {% endfor %}
+
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle"></i>
+                        <strong>Catatan:</strong> Minimal 1 teks harus diisi. Teks kosong akan diabaikan.
+                    </div>
+
+                    <div class="row g-2">
+                        <div class="col-md-6">
+                            <button type="button" class="btn btn-outline-secondary w-100" id="clearBtn">
+                                <i class="bi bi-x-circle"></i> Hapus Semua
+                            </button>
+                        </div>
+                        <div class="col-md-6">
+                            <button type="submit" class="btn btn-success w-100">
+                                <i class="bi bi-play-circle"></i> Prediksi
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="card mt-4">
+            <div class="card-body">
+                <h6 class="card-title">Contoh Teks:</h6>
+                <ul class="text-muted small mb-0">
+                    <li>Hari ini aku sangat bahagia sekali!</li>
+                    <li>Aku merasa sedih dan kecewa dengan hasilnya</li>
+                    <li>Ini membuatku sangat marah</li>
+                    <li>Aku takut dengan situasi ini</li>
+                    <li>Aku sangat mencintai keluargaku</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.getElementById('clearBtn').addEventListener('click', function() {
+    for (let i = 1; i <= 5; i++) {
+        document.getElementById(`text_${i}`).value = '';
+    }
+});
+</script>
+{% endblock %}
