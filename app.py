@@ -1,4 +1,5 @@
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
+from flask_session import Session
 import os
 import numpy as np
 from werkzeug.utils import secure_filename
@@ -8,13 +9,18 @@ from src.preprocessor import get_preprocessing_preview
 from src.model_trainer import train_all_scenarios
 from src.evaluator import evaluate_all_scenarios, create_comparison_table, select_best_model, save_best_model_metadata, get_confusion_matrix
 from src.predictor import predict_with_best_model, load_best_model
+from src.async_trainer import start_training_thread, get_training_state, reset_training_state
 
 app = Flask(__name__)
 app.config.from_object(Config)
 
+# Initialize server-side session
+Session(app)
+
 # Ensure upload and model folders exist
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(app.config['MODELS_FOLDER'], exist_ok=True)
+os.makedirs(app.config['SESSION_FILE_DIR'], exist_ok=True)
 
 def convert_to_json_serializable(obj):
     """
@@ -211,40 +217,40 @@ def training():
         df = load_data(filepath)
         texts, labels = prepare_data(df, text_col, label_col)
 
-        # Train models
-        try:
-            flash('Memulai proses training...', 'info')
-            training_results = train_all_scenarios(texts, labels, selected_scenarios)
-
-            # Evaluate models
-            evaluation_results = evaluate_all_scenarios(training_results)
-
-            # Create comparison table
-            comparison_data = create_comparison_table(evaluation_results)
-
-            # Select best model
-            best_model = select_best_model(comparison_data)
-
-            # Save best model metadata
-            if best_model:
-                save_best_model_metadata(best_model, evaluation_results)
-
-            # Store results in session (convert numpy types to native Python types)
-            session['comparison_data'] = convert_to_json_serializable(comparison_data)
-            session['best_model'] = convert_to_json_serializable(best_model)
-            session['evaluation_results'] = convert_to_json_serializable(evaluation_results)
-
-            flash('Training selesai!', 'success')
-            return redirect(url_for('evaluation'))
-
-        except Exception as e:
-            flash(f'Error saat training: {str(e)}', 'danger')
-            return redirect(request.url)
+        # Start async training with full dataset
+        if start_training_thread(texts, labels, selected_scenarios):
+            flash('Training dimulai! Halaman akan menampilkan progress...', 'info')
+            return redirect(url_for('training_progress'))
+        else:
+            flash('Training sudah berjalan. Silakan tunggu...', 'warning')
+            return redirect(url_for('training_progress'))
 
     # Get scenario configurations
     scenarios = Config.SCENARIOS
 
     return render_template('training.html', scenarios=scenarios)
+
+@app.route('/training_progress')
+def training_progress():
+    """Training progress page with real-time updates"""
+    return render_template('training_progress.html')
+
+@app.route('/api/training_status')
+def training_status():
+    """API endpoint to get training status"""
+    state = get_training_state()
+    
+    # Convert to JSON-serializable format
+    state = convert_to_json_serializable(state)
+    
+    # If completed, store results in session
+    if state['status'] == 'completed' and state.get('results'):
+        results = state['results']
+        session['comparison_data'] = results.get('comparison_data')
+        session['best_model'] = results.get('best_model')
+        session['evaluation_results'] = results.get('evaluation_results')
+    
+    return jsonify(state)
 
 @app.route('/evaluation')
 def evaluation():

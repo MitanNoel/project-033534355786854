@@ -1,38 +1,51 @@
 import re
 import string
 
-# Initialize Sastrawi stemmer and stopword remover (lazy initialization)
+# Initialize NLTK stemmer (lazy initialization)
 _stemmer = None
 _stopwords = None
 
 def get_stemmer():
-    """Get or initialize Sastrawi stemmer"""
+    """Get or initialize English Porter stemmer from NLTK"""
     global _stemmer
     if _stemmer is None:
         try:
-            from Sastrawi.Stemmer.StemmerFactory import StemmerFactory
-            factory = StemmerFactory()
-            _stemmer = factory.create_stemmer()
+            from nltk.stem import PorterStemmer
+            _stemmer = PorterStemmer()
         except ImportError:
-            print("Warning: Sastrawi not installed. Stemming will be skipped.")
+            print("Warning: NLTK not installed. Stemming will be skipped.")
             _stemmer = None
     return _stemmer
 
 def get_stopwords():
-    """Get or initialize Indonesian stopwords"""
+    """Get or initialize English stopwords"""
     global _stopwords
     if _stopwords is None:
         try:
-            from Sastrawi.StopWordRemover.StopWordRemoverFactory import StopWordRemoverFactory
-            factory = StopWordRemoverFactory()
-            _stopwords = factory.get_stop_words()
+            import nltk
+            try:
+                from nltk.corpus import stopwords
+                _stopwords = set(stopwords.words('english'))
+            except LookupError:
+                # Download stopwords if not available
+                print("Downloading NLTK stopwords...")
+                nltk.download('stopwords', quiet=True)
+                from nltk.corpus import stopwords
+                _stopwords = set(stopwords.words('english'))
         except ImportError:
-            print("Warning: Sastrawi not installed. Using basic stopwords list.")
-            # Basic Indonesian stopwords as fallback
+            print("Warning: NLTK not installed. Using basic English stopwords.")
+            # Basic English stopwords as fallback
             _stopwords = set([
-                'yang', 'untuk', 'pada', 'ke', 'para', 'namun', 'menurut', 'antara', 'dia', 'dua',
-                'ia', 'seperti', 'jika', 'jika', 'sehingga', 'kembali', 'dan', 'tidak', 'ini', 'karena',
-                'oleh', 'itu', 'dalam', 'bisa', 'dari', 'saya', 'dengan', 'akan', 'kami', 'telah'
+                'i', 'me', 'my', 'myself', 'we', 'our', 'ours', 'ourselves', 'you', 'your',
+                'yours', 'yourself', 'yourselves', 'he', 'him', 'his', 'himself', 'she', 'her',
+                'hers', 'herself', 'it', 'its', 'itself', 'they', 'them', 'their', 'theirs',
+                'themselves', 'what', 'which', 'who', 'whom', 'this', 'that', 'these', 'those',
+                'am', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had',
+                'having', 'do', 'does', 'did', 'doing', 'a', 'an', 'the', 'and', 'but', 'if',
+                'or', 'because', 'as', 'until', 'while', 'of', 'at', 'by', 'for', 'with',
+                'about', 'against', 'between', 'into', 'through', 'during', 'before', 'after',
+                'above', 'below', 'to', 'from', 'up', 'down', 'in', 'out', 'on', 'off', 'over',
+                'under', 'again', 'further', 'then', 'once'
             ])
     return _stopwords
 
@@ -146,7 +159,7 @@ def remove_stopwords_from_text(text, custom_stopwords=None):
 
 def stem_text(text):
     """
-    Apply Sastrawi stemming to Indonesian text
+    Apply Porter stemming to English text (fast)
 
     Args:
         text: Input text string
@@ -158,8 +171,11 @@ def stem_text(text):
 
     if stemmer is None:
         return text
-
-    return stemmer.stem(text)
+    
+    # Stem word by word - Porter stemmer is very fast
+    words = text.split()
+    stemmed_words = [stemmer.stem(word) for word in words]
+    return ' '.join(stemmed_words)
 
 def preprocess_text(text, config):
     """
@@ -212,6 +228,8 @@ def preprocess_text(text, config):
 def preprocess_texts(texts, config):
     """
     Apply preprocessing to a list of texts
+    
+    Optimized version with batch processing for stemming
 
     Args:
         texts: List of text strings
@@ -220,7 +238,44 @@ def preprocess_texts(texts, config):
     Returns:
         list: List of preprocessed texts
     """
+    # If stemming is enabled and we have many texts, batch process
+    if config.get('stemming', False) and len(texts) > 100:
+        return preprocess_texts_batch(texts, config)
+    
     return [preprocess_text(text, config) for text in texts]
+
+def preprocess_texts_batch(texts, config):
+    """
+    Batch preprocessing with progress indication for large datasets
+    
+    Args:
+        texts: List of text strings
+        config: Preprocessing configuration dict
+    
+    Returns:
+        list: List of preprocessed texts
+    """
+    import sys
+    
+    processed = []
+    total = len(texts)
+    
+    # Process in chunks to show progress
+    chunk_size = 500  # Increased chunk size for better performance
+    report_every = max(1, total // 20)  # Report every 5%
+    
+    for i in range(0, total, chunk_size):
+        chunk_end = min(i + chunk_size, total)
+        chunk = texts[i:chunk_end]
+        processed.extend([preprocess_text(text, config) for text in chunk])
+        
+        # Print progress regularly
+        if i % report_every < chunk_size or chunk_end == total:
+            progress = int((chunk_end / total) * 100)
+            print(f"    Preprocessing: {progress}% ({chunk_end}/{total} texts)", flush=True)
+            sys.stdout.flush()
+    
+    return processed
 
 def get_preprocessing_preview(text, config):
     """

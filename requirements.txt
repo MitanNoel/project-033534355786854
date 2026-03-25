@@ -1,8 +1,8 @@
 Flask
+Flask-Session
 pandas
 numpy
 scikit-learn
-Sastrawi
 nltk
 joblib
 python-dotenv

@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+
+{% block title %}Progress Training - Deteksi Emosi{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0">
+                    <i class="bi bi-gear-fill"></i> Progress Training Model
+                </h4>
+            </div>
+            <div class="card-body">
+                <!-- Progress Bar -->
+                <div class="mb-4">
+                    <div class="d-flex justify-content-between mb-2">
+                        <span id="statusText" class="fw-bold">Memulai...</span>
+                        <span id="progressPercent" class="text-muted">0%</span>
+                    </div>
+                    <div class="progress" style="height: 30px;">
+                        <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated bg-primary" 
+                             role="progressbar" 
+                             style="width: 0%"
+                             aria-valuenow="0" 
+                             aria-valuemin="0" 
+                             aria-valuemax="100">
+                            0%
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Current Scenario -->
+                <div id="currentScenarioBox" class="alert alert-info" style="display: none;">
+                    <i class="bi bi-arrow-right-circle-fill"></i>
+                    <strong>Skenario Saat Ini:</strong> 
+                    <span id="currentScenario">-</span>
+                </div>
+
+                <!-- Status Message -->
+                <div id="messageBox" class="alert alert-light border">
+                    <p id="statusMessage" class="mb-0">
+                        <i class="bi bi-hourglass-split"></i> Menunggu proses training dimulai...
+                    </p>
+                </div>
+
+                <!-- Time Elapsed -->
+                <div class="text-muted small">
+                    <i class="bi bi-clock"></i> 
+                    <span id="timeElapsed">Waktu: 0 detik</span>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="mt-4">
+                    <a href="{{ url_for('evaluation') }}" id="viewResultsBtn" class="btn btn-success" style="display: none;">
+                        <i class="bi bi-check-circle"></i> Lihat Hasil Evaluasi
+                    </a>
+                    <a href="{{ url_for('training') }}" class="btn btn-secondary">
+                        <i class="bi bi-arrow-left"></i> Kembali
+                    </a>
+                </div>
+
+                <!-- Tips -->
+                <div class="mt-4">
+                    <div class="alert alert-warning">
+                        <h6><i class="bi bi-lightbulb"></i> Tips:</h6>
+                        <ul class="mb-0 small">
+                            <li>Proses training dapat memakan waktu 5-15 menit tergantung ukuran data</li>
+                            <li>Scenario 2 & 4 (dengan stemming) lebih lambat tapi biasanya lebih akurat</li>
+                            <li>Jangan tutup halaman ini sampai training selesai</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Auto-refresh script -->
+<script>
+let startTime = Date.now();
+let pollInterval;
+
+function updateProgress() {
+    fetch('/api/training_status')
+        .then(response => response.json())
+        .then(data => {
+            // Update progress bar
+            const progress = data.progress || 0;
+            document.getElementById('progressBar').style.width = progress + '%';
+            document.getElementById('progressBar').textContent = progress + '%';
+            document.getElementById('progressBar').setAttribute('aria-valuenow', progress);
+            document.getElementById('progressPercent').textContent = progress + '%';
+
+            // Update status text
+            const statusText = document.getElementById('statusText');
+            const messageBox = document.getElementById('messageBox');
+            const statusMessage = document.getElementById('statusMessage');
+            
+            if (data.status === 'running') {
+                statusText.textContent = 'Training Berjalan...';
+                statusMessage.innerHTML = '<i class="bi bi-hourglass-split"></i> ' + (data.message || 'Processing...');
+                
+                // Show current scenario
+                if (data.current_scenario) {
+                    document.getElementById('currentScenarioBox').style.display = 'block';
+                    document.getElementById('currentScenario').textContent = data.current_scenario;
+                } else {
+                    document.getElementById('currentScenarioBox').style.display = 'none';
+                }
+            } else if (data.status === 'completed') {
+                statusText.textContent = 'Training Selesai!';
+                statusText.className = 'fw-bold text-success';
+                messageBox.className = 'alert alert-success border';
+                statusMessage.innerHTML = '<i class="bi bi-check-circle-fill"></i> Training selesai! Mengalihkan ke hasil evaluasi...';
+                
+                document.getElementById('progressBar').className = 'progress-bar bg-success';
+                document.getElementById('progressBar').classList.remove('progress-bar-animated', 'progress-bar-striped');
+                document.getElementById('currentScenarioBox').style.display = 'none';
+                
+                // Show results button
+                document.getElementById('viewResultsBtn').style.display = 'inline-block';
+                
+                // Stop polling
+                clearInterval(pollInterval);
+                
+                // Auto-redirect to evaluation page after 2 seconds
+                setTimeout(() => {
+                    window.location.href = "{{ url_for('evaluation') }}";
+                }, 2000);
+            } else if (data.status === 'error') {
+                statusText.textContent = 'Error!';
+                statusText.className = 'fw-bold text-danger';
+                messageBox.className = 'alert alert-danger border';
+                statusMessage.innerHTML = '<i class="bi bi-exclamation-triangle-fill"></i> ' + (data.error || 'An error occurred during training');
+                
+                document.getElementById('progressBar').className = 'progress-bar bg-danger';
+                document.getElementById('progressBar').classList.remove('progress-bar-animated', 'progress-bar-striped');
+                document.getElementById('currentScenarioBox').style.display = 'none';
+                
+                // Stop polling
+                clearInterval(pollInterval);
+            }
+
+            // Update elapsed time
+            const elapsed = Math.floor((Date.now() - startTime) / 1000);
+            const minutes = Math.floor(elapsed / 60);
+            const seconds = elapsed % 60;
+            const timeStr = minutes > 0 ? `${minutes} menit ${seconds} detik` : `${seconds} detik`;
+            document.getElementById('timeElapsed').textContent = 'Waktu: ' + timeStr;
+        })
+        .catch(error => {
+            console.error('Error fetching training status:', error);
+        });
+}
+
+// Start polling every 2 seconds
+updateProgress(); // Initial call
+pollInterval = setInterval(updateProgress, 2000);
+
+// Update time every second
+setInterval(() => {
+    const elapsed = Math.floor((Date.now() - startTime) / 1000);
+    const minutes = Math.floor(elapsed / 60);
+    const seconds = elapsed % 60;
+    const timeStr = minutes > 0 ? `${minutes} menit ${seconds} detik` : `${seconds} detik`;
+    document.getElementById('timeElapsed').textContent = 'Waktu: ' + timeStr;
+}, 1000);
+</script>
+{% endblock %}

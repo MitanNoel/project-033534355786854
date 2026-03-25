@@ -8,6 +8,11 @@ class Config:
     UPLOAD_FOLDER = 'uploads'
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB max file size
     ALLOWED_EXTENSIONS = {'csv'}
+    
+    # Session settings - use filesystem for server-side sessions
+    SESSION_TYPE = 'filesystem'
+    SESSION_FILE_DIR = '.flask_session'
+    SESSION_PERMANENT = False
 
     # Data requirements
     MIN_DATA_POINTS = 800
@@ -68,7 +73,7 @@ class Config:
             },
             'models': {
                 'naive_bayes': {'alpha': 0.5},
-                'svm': {'C': 1.0, 'kernel': 'linear', 'max_iter': 1000}
+                'svm': {'C': 1.0, 'kernel': 'linear', 'max_iter': 500}  # Reduced for faster training
             }
         },
         'scenario_3': {
@@ -88,7 +93,7 @@ class Config:
             },
             'models': {
                 'naive_bayes': {'alpha': 1.0},
-                'svm': {'C': 1.0, 'kernel': 'linear', 'max_iter': 1000}
+                'svm': {'C': 1.0, 'kernel': 'linear', 'max_iter': 500}  # Reduced for faster training
             }
         },
         'scenario_4': {
@@ -108,7 +113,7 @@ class Config:
             },
             'models': {
                 'naive_bayes': {'alpha': 0.1},
-                'svm': {'C': 10.0, 'kernel': 'linear', 'max_iter': 1000}
+                'svm': {'C': 10.0, 'kernel': 'linear', 'max_iter': 500}  # Reduced for faster training
             }
         }
     }
