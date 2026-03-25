@@ -1,5 +1,6 @@
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
 import os
+import numpy as np
 from werkzeug.utils import secure_filename
 from config import Config
 from src.data_handler import validate_csv, load_data, get_column_names, check_data_quality, prepare_data
@@ -14,6 +15,25 @@ app.config.from_object(Config)
 # Ensure upload and model folders exist
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(app.config['MODELS_FOLDER'], exist_ok=True)
+
+def convert_to_serializable(obj):
+    """
+    Convert numpy/pandas types to Python native types for JSON serialization
+    """
+    if isinstance(obj, (np.integer, np.int64)):
+        return int(obj)
+    elif isinstance(obj, (np.floating, np.float64)):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, dict):
+        return {key: convert_to_serializable(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_to_serializable(item) for item in obj]
+    elif isinstance(obj, tuple):
+        return tuple(convert_to_serializable(item) for item in obj)
+    else:
+        return obj
 
 def allowed_file(filename):
     """Check if file has allowed extension"""
@@ -63,8 +83,8 @@ def upload():
             df = validation_result['data']
             columns = get_column_names(df)
 
-            # Store data info in session
-            session['total_rows'] = len(df)
+            # Store data info in session (convert to native Python types)
+            session['total_rows'] = int(len(df))
             session['columns'] = columns
 
             flash(validation_result['message'], 'success')
@@ -112,8 +132,8 @@ def select_columns():
         for message in quality_report['messages']:
             flash(message, 'warning')
 
-    # Store quality report in session
-    session['quality_report'] = quality_report
+    # Store quality report in session (convert numpy types to native Python)
+    session['quality_report'] = convert_to_serializable(quality_report)
 
     return redirect(url_for('preprocessing'))
 
@@ -165,9 +185,25 @@ def preview_preprocessing():
 @app.route('/training', methods=['GET', 'POST'])
 def training():
     """Model training page"""
-    if 'uploaded_file' not in session or 'preprocessing_config' not in session:
-        flash('Silakan selesaikan langkah sebelumnya', 'warning')
+    # Check if file is uploaded
+    if 'uploaded_file' not in session:
+        flash('Silakan upload file CSV terlebih dahulu', 'warning')
         return redirect(url_for('upload'))
+
+    # Check if columns are selected
+    if 'text_col' not in session or 'label_col' not in session:
+        flash('Silakan pilih kolom teks dan label terlebih dahulu', 'warning')
+        return redirect(url_for('upload'))
+
+    # Use default preprocessing config if not set
+    if 'preprocessing_config' not in session:
+        session['preprocessing_config'] = {
+            'lowercase': True,
+            'remove_punctuation': True,
+            'remove_numbers': True,
+            'remove_stopwords': False,
+            'stemming': False
+        }
 
     if request.method == 'POST':
         # Get selected scenarios
@@ -203,10 +239,11 @@ def training():
             if best_model:
                 save_best_model_metadata(best_model, evaluation_results)
 
-            # Store results in session
-            session['comparison_data'] = comparison_data
-            session['best_model'] = best_model
-            session['evaluation_results'] = evaluation_results
+            # Store results in session (convert numpy types to native Python)
+            session['comparison_data'] = convert_to_serializable(comparison_data)
+            session['best_model'] = convert_to_serializable(best_model)
+            # Note: evaluation_results contains model objects, so we don't store it in session
+            # It's only used temporarily for saving best model metadata
 
             flash('Training selesai!', 'success')
             return redirect(url_for('evaluation'))
@@ -261,9 +298,9 @@ def prediction():
         prediction_result = predict_with_best_model(texts)
 
         if prediction_result['success']:
-            # Store in session
-            session['prediction_results'] = prediction_result['predictions']
-            session['model_info'] = prediction_result['model_info']
+            # Store in session (convert numpy types to native Python)
+            session['prediction_results'] = convert_to_serializable(prediction_result['predictions'])
+            session['model_info'] = convert_to_serializable(prediction_result['model_info'])
 
             return redirect(url_for('results'))
         else:

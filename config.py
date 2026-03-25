@@ -6,7 +6,7 @@ class Config:
     # Flask settings
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-secret-key-change-in-production'
     UPLOAD_FOLDER = 'uploads'
-    MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB max file size
+    MAX_CONTENT_LENGTH = 10 * 1024 * 1024  # 10MB max file size (Codespace limit)
     ALLOWED_EXTENSIONS = {'csv'}
 
     # Data requirements

@@ -13,6 +13,8 @@ Aplikasi web untuk klasifikasi emosi pada teks berbahasa Indonesia menggunakan M
 - Interface prediksi untuk 5 teks sekaligus
 - Tampilan hasil yang user-friendly
 
+> **⚠️ Catatan:** Di GitHub Codespaces, ukuran file upload dibatasi **maksimal 10MB** karena keterbatasan proxy platform. Untuk file lebih besar (sampai 100MB), jalankan aplikasi di **local machine** Anda.
+
 ## Teknologi yang Digunakan
 
 ### Backend
@@ -200,7 +202,19 @@ pip install -r requirements.txt
 ```
 
 ### Error: File size too large
-File CSV maksimal 16MB. Gunakan file yang lebih kecil atau tingkatkan `MAX_CONTENT_LENGTH` di `config.py`.
+**Di GitHub Codespaces:** File CSV maksimal 10MB karena keterbatasan proxy nginx platform.
+
+**Untuk file lebih besar (sampai 100MB):** Jalankan aplikasi di local machine Anda:
+```bash
+git clone <repo-url>
+cd project-033534355786854
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+python app.py
+```
+
+Jika perlu mengubah limit di local machine, edit `MAX_CONTENT_LENGTH` di `config.py`.
 
 ### Error: Not enough data
 Pastikan file CSV memiliki minimal 800 baris data.

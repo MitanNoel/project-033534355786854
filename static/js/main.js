@@ -30,10 +30,10 @@ function setupFileUpload() {
         fileInput.addEventListener('change', function(e) {
             const file = e.target.files[0];
             if (file) {
-                // Check file size (max 16MB)
-                const maxSize = 16 * 1024 * 1024;
+                // Check file size (max 10MB for Codespaces)
+                const maxSize = 10 * 1024 * 1024;
                 if (file.size > maxSize) {
-                    alert('File terlalu besar! Maksimal ukuran file adalah 16MB.');
+                    alert('File terlalu besar! Maksimal ukuran file adalah 10MB di Codespaces.\n\nUntuk file lebih besar (sampai 100MB), jalankan aplikasi di local machine Anda.');
                     fileInput.value = '';
                     return;
                 }

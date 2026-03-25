@@ -9,6 +9,27 @@
             <i class="bi bi-cpu"></i> Training Model
         </h2>
 
+        {% if session.get('best_model') %}
+        <div class="alert alert-success shadow mb-4">
+            <h5 class="alert-heading">
+                <i class="bi bi-check-circle"></i> Model Sudah Tersedia
+            </h5>
+            <p class="mb-2">
+                Anda sudah memiliki model terlatih: <strong>{{ session.get('best_model')['scenario'] }}</strong> - <strong>{{ session.get('best_model')['algorithm'] }}</strong>
+            </p>
+            <hr>
+            <div class="d-flex gap-2">
+                <a href="{{ url_for('evaluation') }}" class="btn btn-sm btn-outline-success">
+                    <i class="bi bi-bar-chart"></i> Lihat Evaluasi
+                </a>
+                <a href="{{ url_for('prediction') }}" class="btn btn-sm btn-outline-success">
+                    <i class="bi bi-chat-left-text"></i> Gunakan Prediksi
+                </a>
+                <span class="text-muted align-self-center ms-2">atau latih ulang dengan konfigurasi berbeda di bawah ini</span>
+            </div>
+        </div>
+        {% endif %}
+
         <div class="card shadow">
             <div class="card-body p-4">
                 <form method="POST" id="trainingForm">
