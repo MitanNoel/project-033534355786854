@@ -1,0 +1,9 @@
+scenario,scenario_id,algorithm,algorithm_id,accuracy,precision,recall,f1_score
+Skenario 1: Konfigurasi Dasar,scenario_1,Naive Bayes,naive_bayes,0.605,0.6865,0.5831,0.6051
+Skenario 1: Konfigurasi Dasar,scenario_1,SVM,svm,0.6368,0.6621,0.6435,0.6509
+Skenario 2: Preprocessing Lanjutan,scenario_2,Naive Bayes,naive_bayes,0.6198,0.6674,0.6071,0.6236
+Skenario 2: Preprocessing Lanjutan,scenario_2,SVM,svm,0.6413,0.6679,0.6477,0.6552
+Skenario 3: Count Vectorizer,scenario_3,Naive Bayes,naive_bayes,0.6141,0.6177,0.6231,0.6187
+Skenario 3: Count Vectorizer,scenario_3,SVM,svm,0.6005,0.6323,0.6116,0.6204
+Skenario 4: Konfigurasi Optimal,scenario_4,Naive Bayes,naive_bayes,0.5823,0.6009,0.5842,0.5887
+Skenario 4: Konfigurasi Optimal,scenario_4,SVM,svm,0.6027,0.626,0.6123,0.6172

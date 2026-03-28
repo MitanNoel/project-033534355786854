@@ -1,0 +1,385 @@
+{
+  "experiment_timestamp": "2026-03-28T18:28:50.989802",
+  "dataset": {
+    "path": "uploads/Twitter_Emotion_Dataset.csv",
+    "total_samples": 4403,
+    "emotions": [
+      "happy",
+      "sadness",
+      "anger",
+      "fear",
+      "love"
+    ],
+    "train_test_split": "80/20"
+  },
+  "models": [
+    {
+      "scenario": "Skenario 1: Konfigurasi Dasar",
+      "scenario_id": "scenario_1",
+      "algorithm": "Naive Bayes",
+      "algorithm_id": "naive_bayes",
+      "metrics": {
+        "accuracy": 0.605,
+        "precision": 0.6865,
+        "recall": 0.5831,
+        "f1_score": 0.6051
+      },
+      "per_class_metrics": {
+        "love": {
+          "precision": 0.85,
+          "recall": 0.5354330708661418,
+          "f1_score": 0.6570048309178744,
+          "support": 127.0
+        },
+        "anger": {
+          "precision": 0.5924657534246576,
+          "recall": 0.7863636363636364,
+          "f1_score": 0.67578125,
+          "support": 220.0
+        },
+        "happy": {
+          "precision": 0.6402116402116402,
+          "recall": 0.5931372549019608,
+          "f1_score": 0.6157760814249363,
+          "support": 204.0
+        },
+        "sadness": {
+          "precision": 0.45,
+          "recall": 0.585,
+          "f1_score": 0.508695652173913,
+          "support": 200.0
+        },
+        "fear": {
+          "precision": 0.9,
+          "recall": 0.4153846153846154,
+          "f1_score": 0.5684210526315789,
+          "support": 130.0
+        }
+      },
+      "model_path": "models/scenario_1_nb.joblib",
+      "vectorizer_path": "models/vectorizer_scenario_1.joblib"
+    },
+    {
+      "scenario": "Skenario 1: Konfigurasi Dasar",
+      "scenario_id": "scenario_1",
+      "algorithm": "SVM",
+      "algorithm_id": "svm",
+      "metrics": {
+        "accuracy": 0.6368,
+        "precision": 0.6621,
+        "recall": 0.6435,
+        "f1_score": 0.6509
+      },
+      "per_class_metrics": {
+        "love": {
+          "precision": 0.8260869565217391,
+          "recall": 0.7480314960629921,
+          "f1_score": 0.7851239669421488,
+          "support": 127.0
+        },
+        "anger": {
+          "precision": 0.62109375,
+          "recall": 0.7227272727272728,
+          "f1_score": 0.6680672268907563,
+          "support": 220.0
+        },
+        "happy": {
+          "precision": 0.6302083333333334,
+          "recall": 0.5931372549019608,
+          "f1_score": 0.6111111111111112,
+          "support": 204.0
+        },
+        "sadness": {
+          "precision": 0.5049019607843137,
+          "recall": 0.515,
+          "f1_score": 0.5099009900990099,
+          "support": 200.0
+        },
+        "fear": {
+          "precision": 0.7280701754385965,
+          "recall": 0.6384615384615384,
+          "f1_score": 0.680327868852459,
+          "support": 130.0
+        }
+      },
+      "model_path": "models/scenario_1_svm.joblib",
+      "vectorizer_path": "models/vectorizer_scenario_1.joblib"
+    },
+    {
+      "scenario": "Skenario 2: Preprocessing Lanjutan",
+      "scenario_id": "scenario_2",
+      "algorithm": "Naive Bayes",
+      "algorithm_id": "naive_bayes",
+      "metrics": {
+        "accuracy": 0.6198,
+        "precision": 0.6674,
+        "recall": 0.6071,
+        "f1_score": 0.6236
+      },
+      "per_class_metrics": {
+        "love": {
+          "precision": 0.8061224489795918,
+          "recall": 0.6220472440944882,
+          "f1_score": 0.7022222222222222,
+          "support": 127.0
+        },
+        "anger": {
+          "precision": 0.6097560975609756,
+          "recall": 0.7954545454545454,
+          "f1_score": 0.6903353057199211,
+          "support": 220.0
+        },
+        "happy": {
+          "precision": 0.6574585635359116,
+          "recall": 0.5833333333333334,
+          "f1_score": 0.6181818181818182,
+          "support": 204.0
+        },
+        "sadness": {
+          "precision": 0.4661016949152542,
+          "recall": 0.55,
+          "f1_score": 0.5045871559633027,
+          "support": 200.0
+        },
+        "fear": {
+          "precision": 0.7974683544303798,
+          "recall": 0.4846153846153846,
+          "f1_score": 0.6028708133971292,
+          "support": 130.0
+        }
+      },
+      "model_path": "models/scenario_2_nb.joblib",
+      "vectorizer_path": "models/vectorizer_scenario_2.joblib"
+    },
+    {
+      "scenario": "Skenario 2: Preprocessing Lanjutan",
+      "scenario_id": "scenario_2",
+      "algorithm": "SVM",
+      "algorithm_id": "svm",
+      "metrics": {
+        "accuracy": 0.6413,
+        "precision": 0.6679,
+        "recall": 0.6477,
+        "f1_score": 0.6552
+      },
+      "per_class_metrics": {
+        "love": {
+          "precision": 0.8521739130434782,
+          "recall": 0.7716535433070866,
+          "f1_score": 0.8099173553719008,
+          "support": 127.0
+        },
+        "anger": {
+          "precision": 0.6203007518796992,
+          "recall": 0.75,
+          "f1_score": 0.6790123456790124,
+          "support": 220.0
+        },
+        "happy": {
+          "precision": 0.6290322580645161,
+          "recall": 0.5735294117647058,
+          "f1_score": 0.6,
+          "support": 204.0
+        },
+        "sadness": {
+          "precision": 0.5148514851485149,
+          "recall": 0.52,
+          "f1_score": 0.5174129353233831,
+          "support": 200.0
+        },
+        "fear": {
+          "precision": 0.7232142857142857,
+          "recall": 0.6230769230769231,
+          "f1_score": 0.6694214876033058,
+          "support": 130.0
+        }
+      },
+      "model_path": "models/scenario_2_svm.joblib",
+      "vectorizer_path": "models/vectorizer_scenario_2.joblib"
+    },
+    {
+      "scenario": "Skenario 3: Count Vectorizer",
+      "scenario_id": "scenario_3",
+      "algorithm": "Naive Bayes",
+      "algorithm_id": "naive_bayes",
+      "metrics": {
+        "accuracy": 0.6141,
+        "precision": 0.6177,
+        "recall": 0.6231,
+        "f1_score": 0.6187
+      },
+      "per_class_metrics": {
+        "love": {
+          "precision": 0.6906474820143885,
+          "recall": 0.7559055118110236,
+          "f1_score": 0.7218045112781954,
+          "support": 127.0
+        },
+        "anger": {
+          "precision": 0.652542372881356,
+          "recall": 0.7,
+          "f1_score": 0.6754385964912281,
+          "support": 220.0
+        },
+        "happy": {
+          "precision": 0.6646706586826348,
+          "recall": 0.5441176470588235,
+          "f1_score": 0.5983827493261455,
+          "support": 204.0
+        },
+        "sadness": {
+          "precision": 0.49261083743842365,
+          "recall": 0.5,
+          "f1_score": 0.49627791563275436,
+          "support": 200.0
+        },
+        "fear": {
+          "precision": 0.5882352941176471,
+          "recall": 0.6153846153846154,
+          "f1_score": 0.6015037593984962,
+          "support": 130.0
+        }
+      },
+      "model_path": "models/scenario_3_nb.joblib",
+      "vectorizer_path": "models/vectorizer_scenario_3.joblib"
+    },
+    {
+      "scenario": "Skenario 3: Count Vectorizer",
+      "scenario_id": "scenario_3",
+      "algorithm": "SVM",
+      "algorithm_id": "svm",
+      "metrics": {
+        "accuracy": 0.6005,
+        "precision": 0.6323,
+        "recall": 0.6116,
+        "f1_score": 0.6204
+      },
+      "per_class_metrics": {
+        "love": {
+          "precision": 0.8454545454545455,
+          "recall": 0.7322834645669292,
+          "f1_score": 0.7848101265822784,
+          "support": 127.0
+        },
+        "anger": {
+          "precision": 0.6297872340425532,
+          "recall": 0.6727272727272727,
+          "f1_score": 0.6505494505494506,
+          "support": 220.0
+        },
+        "happy": {
+          "precision": 0.5572916666666666,
+          "recall": 0.5245098039215687,
+          "f1_score": 0.5404040404040404,
+          "support": 204.0
+        },
+        "sadness": {
+          "precision": 0.4375,
+          "recall": 0.49,
+          "f1_score": 0.46226415094339623,
+          "support": 200.0
+        },
+        "fear": {
+          "precision": 0.6916666666666667,
+          "recall": 0.6384615384615384,
+          "f1_score": 0.664,
+          "support": 130.0
+        }
+      },
+      "model_path": "models/scenario_3_svm.joblib",
+      "vectorizer_path": "models/vectorizer_scenario_3.joblib"
+    },
+    {
+      "scenario": "Skenario 4: Konfigurasi Optimal",
+      "scenario_id": "scenario_4",
+      "algorithm": "Naive Bayes",
+      "algorithm_id": "naive_bayes",
+      "metrics": {
+        "accuracy": 0.5823,
+        "precision": 0.6009,
+        "recall": 0.5842,
+        "f1_score": 0.5887
+      },
+      "per_class_metrics": {
+        "love": {
+          "precision": 0.7226890756302521,
+          "recall": 0.6771653543307087,
+          "f1_score": 0.6991869918699187,
+          "support": 127.0
+        },
+        "anger": {
+          "precision": 0.6192307692307693,
+          "recall": 0.7318181818181818,
+          "f1_score": 0.6708333333333333,
+          "support": 220.0
+        },
+        "happy": {
+          "precision": 0.6012658227848101,
+          "recall": 0.46568627450980393,
+          "f1_score": 0.5248618784530387,
+          "support": 204.0
+        },
+        "sadness": {
+          "precision": 0.4329004329004329,
+          "recall": 0.5,
+          "f1_score": 0.46403712296983757,
+          "support": 200.0
+        },
+        "fear": {
+          "precision": 0.6283185840707964,
+          "recall": 0.5461538461538461,
+          "f1_score": 0.5843621399176955,
+          "support": 130.0
+        }
+      },
+      "model_path": "models/scenario_4_nb.joblib",
+      "vectorizer_path": "models/vectorizer_scenario_4.joblib"
+    },
+    {
+      "scenario": "Skenario 4: Konfigurasi Optimal",
+      "scenario_id": "scenario_4",
+      "algorithm": "SVM",
+      "algorithm_id": "svm",
+      "metrics": {
+        "accuracy": 0.6027,
+        "precision": 0.626,
+        "recall": 0.6123,
+        "f1_score": 0.6172
+      },
+      "per_class_metrics": {
+        "love": {
+          "precision": 0.8189655172413793,
+          "recall": 0.7480314960629921,
+          "f1_score": 0.7818930041152263,
+          "support": 127.0
+        },
+        "anger": {
+          "precision": 0.6219512195121951,
+          "recall": 0.6954545454545454,
+          "f1_score": 0.6566523605150214,
+          "support": 220.0
+        },
+        "happy": {
+          "precision": 0.5872093023255814,
+          "recall": 0.4950980392156863,
+          "f1_score": 0.5372340425531915,
+          "support": 204.0
+        },
+        "sadness": {
+          "precision": 0.45982142857142855,
+          "recall": 0.515,
+          "f1_score": 0.4858490566037736,
+          "support": 200.0
+        },
+        "fear": {
+          "precision": 0.6422764227642277,
+          "recall": 0.6076923076923076,
+          "f1_score": 0.6245059288537549,
+          "support": 130.0
+        }
+      },
+      "model_path": "models/scenario_4_svm.joblib",
+      "vectorizer_path": "models/vectorizer_scenario_4.joblib"
+    }
+  ]
+}
