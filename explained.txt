@@ -1,0 +1,2400 @@
+================================================================================
+DETAILED TECHNICAL EXPLANATION: INDONESIAN EMOTION DETECTION SYSTEM
+================================================================================
+
+This document provides a comprehensive technical deep-dive into how the emotion
+detection system works, from CSV upload through training to making predictions
+on new text. All code examples reference actual files in the project.
+
+================================================================================
+PART 1: OVERALL SYSTEM ARCHITECTURE
+================================================================================
+
+The system is built on a client-server model:
+
+CLIENT (Web Browser)
+    |
+    | HTTP Requests
+    |
+    v
+FLASK SERVER (app.py)
+    |
+    +-- Request Router
+    +-- Session Manager
+    +-- File Upload Handler
+    |
+    +-- Core Modules (src/)
+    |   ├── data_handler.py     (CSV loading, validation)
+    |   ├── preprocessor.py     (Text cleaning)
+    |   ├── feature_extractor.py (Vectorization)
+    |   ├── model_trainer.py    (ML training)
+    |   ├── evaluator.py        (Model evaluation)
+    |   └── predictor.py        (Making predictions)
+    |
+    +-- Config (config.py)
+    |   └── SCENARIOS dictionary (4 preprocessing/training configurations)
+    |
+    +-- Persistent Storage
+        ├── models/             (Trained models, vectorizers)
+        ├── uploads/            (Uploaded CSV files)
+        └── logs/               (Experiment results)
+
+
+WORKFLOW TIMELINE:
+-----------------
+
+Step 1: User Upload CSV
+    app.py (/upload)
+    -> validate_csv()
+    -> session['uploaded_file'] stored
+
+Step 2: Data Quality Check
+    check_data_quality()
+    -> Label distribution shown
+    -> Warnings if issues detected
+
+Step 3: Choose Preprocessing
+    User selects preprocessing level
+    -> Session stores which preprocessing steps to apply
+
+Step 4: Start Training
+    app.py calls train_all_scenarios()
+    -> For each scenario: preprocess -> vectorize -> split -> train 2 models
+    -> Results: 8 trained models saved to disk
+
+Step 5: Evaluate All Models
+    evaluate_all_scenarios()
+    -> Calculate metrics for all 8 models
+    -> Select best model based on F1-Score
+    -> Save metadata of best model
+
+Step 6: Make Predictions
+    User enters new text
+    -> Load best model + vectorizer
+    -> Apply same preprocessing + vectorization
+    -> Model predicts emotion
+    -> Show result to user
+
+
+================================================================================
+PART 2: CSV UPLOAD PROCESS - DETAILED WALKTHROUGH
+================================================================================
+
+File: app.py, Route: /upload (lines 59-110)
+
+STEP-BY-STEP FLOW:
+------------------
+
+1. USER SUBMITS CSV FILE
+   File uploaded via HTML form at /upload
+
+   app.py code (lines 64-79):
+   ```
+   if 'file' not in request.files:
+       flash('No file uploaded', 'danger')
+
+   file = request.files['file']
+
+   if file.filename == '':
+       flash('No file selected', 'danger')
+
+   if file and allowed_file(file.filename):
+       filename = secure_filename(file.filename)
+       filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+       file.save(filepath)
+   ```
+
+   What happens:
+   - File is received via HTTP POST
+   - Filename is sanitized (removes special chars)
+   - File saved to 'uploads/' directory temporarily
+
+
+2. VALIDATE CSV FILE
+   app.py code (line 82):
+   ```
+   validation_result = validate_csv(filepath)
+   ```
+
+   src/data_handler.py - validate_csv() (lines 4-82):
+   ````
+   def validate_csv(file_path):
+       try:
+           df = pd.read_csv(file_path, encoding='utf-8')
+
+           # Check if dataframe is empty
+           if df.empty:
+               return {'valid': False, 'message': 'File is empty'}
+
+           # Check minimum rows (800)
+           if len(df) < Config.MIN_DATA_POINTS:  # MIN_DATA_POINTS = 800
+               return {'valid': False, 'message': f'Need at least 800 rows, got {len(df)}'}
+
+           # Check minimum columns (2: text and label)
+           if len(df.columns) < 2:
+               return {'valid': False, 'message': 'Need at least 2 columns'}
+
+           return {
+               'valid': True,
+               'message': f'Valid! Total {len(df)} rows found.',
+               'data': df
+           }
+
+       except UnicodeDecodeError:
+           # Try alternate encoding (latin-1)
+           df = pd.read_csv(file_path, encoding='latin-1')
+           # ... repeat validation
+   ```
+
+   Example:
+   Input CSV:
+   ```
+   tweet,label
+   "Aku sangat bahagia",happy
+   "Aku marah sekali",anger
+   ...
+   (800+ rows)
+   ```
+
+   Output if valid:
+   ```
+   {
+       'valid': True,
+       'message': 'Valid! Total 4401 rows found.',
+       'data': <DataFrame with tweet and label columns>
+   }
+   ```
+
+   Output if invalid (< 800 rows):
+   ```
+   {
+       'valid': False,
+       'message': 'Need at least 800 rows, got 200',
+       'data': None
+   }
+   ```
+
+
+3. GET COLUMN NAMES
+   app.py code (line 96):
+   ```
+   columns = get_column_names(df)
+   ```
+
+   src/data_handler.py - get_column_names() (lines 102-112):
+   ```
+   def get_column_names(df):
+       return df.columns.tolist()
+   ```
+
+   Example: ['tweet', 'label']
+
+
+4. STORE IN SESSION
+   app.py code (lines 99-100):
+   ```
+   session['total_rows'] = int(len(df))
+   session['columns'] = columns
+   session['uploaded_file'] = filepath
+   ```
+
+   Session is server-side storage (filesystem) that persists across HTTP requests
+   Location: .flask_session/ directory
+
+   Now user can select text and label columns to proceed
+
+
+VALIDATION ERRORS HANDLED:
+--------------------------
+- File not uploaded -> Show error message
+- File is not CSV -> Rejected by file extension check
+- CSV encoding issue -> Try UTF-8, fallback to latin-1
+- Empty file -> Error: "File is empty"
+- Too few rows (< 800) -> Error: "Need at least X rows"
+- Too few columns (< 2) -> Error: "Need at least 2 columns"
+
+
+================================================================================
+PART 3: DATA PREPROCESSING - COMPREHENSIVE EXPLANATION
+================================================================================
+
+File: src/preprocessor.py
+
+Preprocessing transforms raw, messy social media text into clean, standardized
+format suitable for machine learning models.
+
+PREPROCESSING PIPELINE:
+-----------------------
+
+Raw Input Text:
+"Aku SANGAT BAHAGIA sekali!!! @user #happy 🎉 https://t.co/xyz 123 kata"
+
+↓
+
+STEP 1: clean_text() (lines 52-72)
+-------
+Purpose: Remove social media artifacts
+
+Code:
+```
+def clean_text(text):
+    # Remove URLs
+    text = re.sub(r'http\S+|www\S+|https\S+', '', text, flags=re.MULTILINE)
+
+    # Remove mentions (@username)
+    text = re.sub(r'@\w+', '', text)
+
+    # Remove hashtags (#topic)
+    text = re.sub(r'#\w+', '', text)
+
+    return text
+```
+
+Input:  "Aku SANGAT BAHAGIA sekali!!! @user #happy 🎉 https://t.co/xyz 123 kata"
+Output: "Aku SANGAT BAHAGIA sekali!!! 🎉 123 kata"
+
+Why: URLs, mentions, and hashtags don't contribute to emotion classification
+
+
+STEP 2: to_lowercase() (lines 74-76)
+-------
+Purpose: Normalize case
+
+Code:
+```
+def to_lowercase(text):
+    return text.lower()
+```
+
+Input:  "Aku SANGAT BAHAGIA sekali!!! 🎉 123 kata"
+Output: "aku sangat bahagia sekali!!! 🎉 123 kata"
+
+Why: "Bahagia" and "bahagia" should be treated as same word
+
+
+STEP 3: remove_punctuation() (lines 78-85)
+----------
+Purpose: Remove symbols that don't carry semantic meaning
+
+Code:
+```
+def remove_punctuation(text):
+    return text.translate(str.maketrans('', '', string.punctuation))
+    # string.punctuation = '!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~'
+```
+
+Input:  "aku sangat bahagia sekali!!! 🎉 123 kata"
+Output: "aku sangat bahagia sekali 🎉 123 kata"
+
+Why: "!!!" and other punctuation add noise, not emotion information
+
+
+STEP 4: remove_numbers() (lines 87-93)
+-------
+Purpose: Remove digits
+
+Code:
+```
+def remove_numbers(text):
+    return re.sub(r'\d+', '', text)
+```
+
+Input:  "aku sangat bahagia sekali 🎉 123 kata"
+Output: "aku sangat bahagia sekali 🎉 kata"
+
+Why: Numbers like "123" don't indicate emotion
+
+
+STEP 5: remove_stopwords() (lines 95-101)
+--------
+Purpose: Remove common words that appear frequently but carry little meaning
+
+Code:
+```
+def get_stopwords():
+    # Returns set of ~100 common English words
+    return {'a', 'an', 'the', 'is', 'are', 'was', 'were', 'be', 'been',
+            'have', 'has', 'had', 'do', 'does', 'did', 'and', 'or', 'but',
+            'of', 'at', 'by', 'for', 'with', 'to', 'from', 'in', 'on', ...}
+
+def remove_stopwords(text):
+    stopwords = get_stopwords()
+    words = text.split()
+    filtered = [w for w in words if w not in stopwords]
+    return ' '.join(filtered)
+```
+
+Input:  "aku sangat bahagia sekali 🎉 kata"
+Output: "sangat bahagia sekali kata"
+        (assuming 'aku', 'dan', 'yang', etc. in stopwords)
+
+Why: Words like "the", "is", "and" appear in every text, don't help distinguish emotions
+
+NOTE: Current implementation uses English stopwords. Better approach would use
+Indonesian stopwords list for more accurate filtering.
+
+
+STEP 6: apply_stemming() (lines 103-111)
+-------
+Purpose: Reduce inflected words to root form
+
+Code:
+```
+from nltk.stem import PorterStemmer
+
+stemmer = PorterStemmer()  # English stemmer
+
+def apply_stemming(text):
+    words = text.split()
+    stemmed = [stemmer.stem(w) for w in words]
+    return ' '.join(stemmed)
+```
+
+Example transformations:
+- "bahagia" -> "bahagi" (removes suffix -a)
+- "berlari" -> "ber" (removes suffix -lari)
+- "marah" -> "marah" (already root)
+
+Input:  "sangat bahagia sekali kata"
+Output: "sangat bahagi sekali kata"
+
+Why: "bahagia" and "kebahagiaan" should both map to same root
+
+NOTE: Porter Stemmer is for English words. Indonesian uses different morphology.
+Ideal tool would be Sastrawi library (Indonesian stemmer).
+
+
+FINAL PREPROCESSED TEXT: "sangat bahagi sekali kata"
+
+
+PREPROCESSING VARIATIONS (Configured in config.py):
+----------------------------------------------------
+
+Scenario 1: Basic Cleaning
+- Step 1: clean_text()           ✓
+- Step 2: to_lowercase()         ✓
+- Step 3: remove_punctuation()   ✓
+- Step 4: remove_numbers()       ✓
+- Step 5: remove_stopwords()     ✗ (skipped)
+- Step 6: apply_stemming()       ✗ (skipped)
+Result: Vocabulary stays large, keeps common words
+
+Scenario 2: Advanced Preprocessing (BEST MODEL)
+- Step 1: clean_text()           ✓
+- Step 2: to_lowercase()         ✓
+- Step 3: remove_punctuation()   ✓
+- Step 4: remove_numbers()       ✓
+- Step 5: remove_stopwords()     ✓
+- Step 6: apply_stemming()       ✓
+Result: Cleaner vocabulary, emphasizes emotion words
+
+Scenario 3: Same as Scenario 2 but with different vectorizer
+(explained in Part 4)
+
+Scenario 4: Full preprocessing with aggressive parameters
+Same as Scenario 2
+
+
+WHY PREPROCESSING MATTERS:
+--------------------------
+
+Before and after comparison:
+
+Before preprocessing:
+"Aku SANGAT BAHAGIA!!! #happy @friend https://t.co/xyz 123 hari ini"
+
+This text if fed to model has:
+- Capital letters (BAHAGIA)
+- Hashtags (#happy)
+- Mentions (@friend)
+- URLs (https://...)
+- Numbers (123)
+- Stop words (aku, ini)
+Model has to learn about these variations
+
+After preprocessing (Scenario 2):
+"sangat bahagia"
+
+Model focuses on emotionally significant words
+Training becomes more efficient
+Better generalization to unseen text
+
+
+PREPROCESSING CODE IN ACTION:
+-----------------------------
+
+File: src/preprocessor.py, function preprocess_texts() (lines 186-215)
+
+```
+def preprocess_texts(texts, config, show_progress=True):
+    """
+    Preprocess multiple texts according to configuration
+
+    Args:
+        texts: List of text strings
+        config: Configuration dict with preprocessing flags
+        show_progress: Show progress bar
+
+    Returns:
+        List of preprocessed texts
+    """
+    processed = []
+    total = len(texts)
+
+    for idx, text in enumerate(texts):
+        # Start with basic cleaning
+        result = clean_text(text)
+
+        # Apply optional steps based on config
+        if config.get('lowercase', True):
+            result = to_lowercase(result)
+
+        if config.get('remove_punctuation', True):
+            result = remove_punctuation(result)
+
+        if config.get('remove_numbers', True):
+            result = remove_numbers(result)
+
+        if config.get('remove_stopwords', False):  # Default False
+            result = remove_stopwords(result)
+
+        if config.get('stemming', False):  # Default False
+            result = apply_stemming(result)
+
+        processed.append(result)
+
+        # Show progress
+        if show_progress and (idx + 1) % 500 == 0:
+            print(f"Preprocessing: {idx + 1}/{total} texts")
+
+    return processed
+```
+
+How it's called from app.py:
+
+```
+from src.preprocessor import preprocess_texts
+
+# In training route
+preprocessing_config = scenario_config['preprocessing']
+preprocessed_texts = preprocess_texts(
+    texts,
+    preprocessing_config,
+    show_progress=True
+)
+# Returns list of cleaned texts
+```
+
+Example execution with 4401 texts:
+Input:  4401 raw Twitter texts
+Process: Apply 6-step pipeline
+Output: 4401 cleaned, standardized texts
+Time:   ~5-10 seconds depending on hardware
+
+
+================================================================================
+PART 4: FEATURE EXTRACTION (VECTORIZATION)
+================================================================================
+
+File: src/feature_extractor.py
+
+After preprocessing, text is still strings. Machine learning models need numbers.
+Feature extraction converts text --> numeric vectors (arrays of numbers).
+
+THE PROBLEM:
+-----------
+ML models work with numbers, not text. We need to convert:
+
+Text:           "sangat bahagia"
+What we need:   [0.5, 0.3, 0.0, 0.2, ...]  (array of 5000 numbers)
+
+
+THE SOLUTION: TF-IDF VECTORIZATION
+-----------------------------------
+
+Step 1: Build Vocabulary
+--------
+Process all training texts and create dictionary of unique words:
+
+Texts:
+- "sangat bahagia"
+- "marah sekali"
+- "sedih"
+- "takut sekali"
+
+Vocabulary (word -> ID):
+{
+  'sangat': 0,
+  'bahagia': 1,
+  'marah': 2,
+  'sekali': 3,
+  'sedih': 4,
+  'takut': 5
+}
+
+Code from feature_extractor.py (lines 5-32):
+```
+from sklearn.feature_extraction.text import TfidfVectorizer
+
+def create_vectorizer(method='tfidf', max_features=5000, ngram_range=(1, 2)):
+    if method == 'tfidf':
+        return TfidfVectorizer(
+            max_features=max_features,  # Keep only top 5000 words
+            ngram_range=ngram_range,     # 1-word and 2-word phrases
+            min_df=2,                    # Ignore words appearing < 2 docs
+            max_df=0.95                  # Ignore words appearing > 95% docs
+        )
+```
+
+Parameters explained:
+- max_features=5000: Keep only 5000 most important words (ignore rare words)
+- min_df=2: Word must appear in at least 2 documents (avoid one-off typos)
+- max_df=0.95: Word appearing in > 95% docs is too common (filtered out)
+- ngram_range=(1,2): Create features for 1-word and 2-word combinations
+
+
+Step 2: Calculate TF-IDF Scores
+-------
+
+TF-IDF = Term Frequency - Inverse Document Frequency
+
+Formula:
+TF-IDF(word, document) = TF(word, document) × IDF(word)
+
+Where:
+  TF(word, doc) = frequency of word in document / total words in document
+  IDF(word) = log(total documents / documents containing word)
+
+Example:
+Text 1 (happy): "sangat bahagia"
+- TF('sangat'): 1/2 = 0.5 (appears 1 time out of 2 words)
+- TF('bahagia'): 1/2 = 0.5
+
+Corpus statistics (100 documents total):
+- 'sangat' appears in 50 documents -> IDF = log(100/50) = 0.30
+- 'bahagia' appears in 20 documents -> IDF = log(100/20) = 0.70
+
+TF-IDF scores:
+- TF-IDF('sangat') = 0.5 × 0.30 = 0.15
+- TF-IDF('bahagia') = 0.5 × 0.70 = 0.35
+
+Why TF-IDF instead of raw count?
+- 'bahagia' (happy word) gets higher score even though both appear once
+- Words appearing in many documents (common stopwords) get lower weight
+- Balances frequency and relevance
+
+
+Step 3: Create Feature Vectors
+------
+
+Text: "sangat bahagia"
+
+Feature vector (sparse, only non-zero values shown):
+Index: [0, 1, 2, 3, 4, 5, ...]
+Value: [0.15, 0.35, 0, 0, 0, 0, ...]
+       (sangat, bahagia, marah, sekali, sedih, takut, ...)
+
+Code from feature_extractor.py (lines 34-49):
+```
+def fit_transform_features(texts, method='tfidf', max_features=5000, ngram_range=(1,2)):
+    vectorizer = create_vectorizer(method, max_features, ngram_range)
+    features = vectorizer.fit_transform(texts)
+    return features, vectorizer
+```
+
+For 4401 training texts:
+features shape = (4401, 5000)
+- 4401 rows (one per text)
+- 5000 columns (one per word in vocabulary)
+
+Matrix is "sparse": Most values are 0 (text doesn't contain most words)
+scikit-learn stores only non-zero values in memory (efficient)
+
+
+UNIGRAM vs BIGRAM vs TRIGRAM:
+-----------------------------
+
+Unigram (1-word):
+Vocabulary: ['sangat', 'bahagia', 'marah', 'sekali', ...]
+Features: Single words only
+Max Features: 3000 (Scenario 1)
+
+Example text: "sangat bahagia"
+Features: [sangat=0.5, bahagia=0.5, ...]
+
+
+Bigram (2-word):
+Vocabulary: ['sangat', 'bahagia', 'sangat bahagia', 'marah sekali', ...]
+Features: Single words + two-word phrases
+Max Features: 5000 (Scenario 2)
+
+Example text: "sangat bahagia"
+Features: [sangat=0.3, bahagia=0.3, 'sangat bahagia'=0.4, ...]
+
+Benefit: Captures context! "sangat bahagia" (very happy) is different from
+just "bahagia" (happy)
+
+
+Trigram (3-word):
+Vocabulary includes 3-word phrases
+Max Features: 7000 (Scenario 4)
+
+Example: "sangat sekali bahagia" captures 3-word emotions
+But: Rarer in training set, can cause overfitting
+
+
+Why Scenario 2 (Bigram) is Best:
+- Unigram (Scenario 1): Loses context "sangat bahagia" vs just "bahagia"
+- Bigram (Scenario 2): Captures useful context with 5000 features (good balance)
+- Trigram (Scenario 4): Too sparse, specific phrases appear rarely
+
+
+COUNT VECTORIZER vs TF-IDF:
+---------------------------
+
+Count Vectorizer (Scenario 3):
+- Produces raw word counts
+- Text "sangat sangat bahagia" -> 'sangat'=2, 'bahagia'=1
+- Doesn't weight by document frequency
+- Problem: Common words (stopwords we didn't remove) get high counts
+
+Code:
+```
+from sklearn.feature_extraction.text import CountVectorizer
+
+count_vectorizer = CountVectorizer(max_features=5000, ngram_range=(1,2))
+```
+
+TF-IDF Vectorizer (Scenario 2):
+- Produces weighted scores (TF-IDF formula)
+- Same text "sangat sangat bahagia" -> normalized and weighted
+- Common words get lower weight, emotion words higher weight
+- Better for classification
+
+Result: TF-IDF (Scenario 2) outperforms Count Vectorizer (Scenario 3)
+by ~3.5% F1-Score (0.6552 vs 0.6204)
+
+
+VECTORIZER PERSISTENCE:
+-----------------------
+
+Code from feature_extractor.py (lines 64-82):
+```
+def save_vectorizer(vectorizer, filepath):
+    """Save vectorizer to file"""
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
+    joblib.dump(vectorizer, filepath)
+
+def load_vectorizer(filepath):
+    """Load vectorizer from file"""
+    try:
+        vectorizer = joblib.load(filepath)
+        return vectorizer
+    except Exception as e:
+        print(f"Error loading vectorizer: {e}")
+        return None
+```
+
+Critical Point: MUST use same vectorizer for training and prediction!
+
+Training phase:
+vectorizer_train = fit_transform(training_texts)  # Learn vocabulary
+save_vectorizer(vectorizer_train, 'models/vectorizer_scenario_2.joblib')
+
+Prediction phase:
+vectorizer_load = load_vectorizer('models/vectorizer_scenario_2.joblib')
+features_test = vectorizer_load.transform(new_texts)  # Use SAME vocabulary
+
+If you use different vectorizer, word mappings are different -> wrong predictions!
+
+
+COMPLETE EXAMPLE:
+-----------------
+
+Training set (3 texts):
+[
+  ("sangat bahagia", label: happy),
+  ("marah sekali", label: anger),
+  ("sedih banget", label: sadness)
+]
+
+Step 1: Preprocessed texts (already cleaned)
+[
+  "sangat bahagia",
+  "marah sekali",
+  "sedih banget"
+]
+
+Step 2: Fit TF-IDF vectorizer
+```
+vectorizer = TfidfVectorizer(max_features=5000, ngram_range=(1,2))
+features = vectorizer.fit_transform(texts)
+```
+
+Vocabulary learned:
+{
+  'sangat': 0,
+  'bahagia': 1,
+  'marah': 2,
+  'sekali': 3,
+  'sedih': 4,
+  'banget': 5,
+  'sangat bahagia': 6,  # bigram
+  'marah sekali': 7,    # bigram
+  'sedih banget': 8     # bigram
+}
+
+Step 3: Convert texts to vectors
+Text 1: "sangat bahagia"
+Unigram counts: sangat=1, bahagia=1
+Bigram counts: 'sangat bahagia'=1
+TF values: [0.5, 0.5, 0, 0, 0, 0, 0, 0, 0]
+IDF values: [0.3, 0.7, 0.7, 0.7, 0.7, 0.7, 1.0, 1.0, 1.0] (example)
+TF-IDF:   [0.15, 0.35, 0, 0, 0, 0, 0.5, 0, 0]
+           (sangat=0.15, bahagia=0.35, bigram=0.5)
+
+Text 2: "marah sekali"
+TF-IDF:   [0, 0, 0.35, 0.35, 0, 0, 0, 0.7, 0]
+
+Text 3: "sedih banget"
+TF-IDF:   [0, 0, 0, 0, 0.35, 0.35, 0, 0, 0.7]
+
+Feature matrix (3 texts × 9 features):
+[
+  [0.15, 0.35, 0,    0,    0,    0,    0.5, 0,    0   ],  # happy
+  [0,    0,    0.35, 0.35, 0,    0,    0,   0.7,  0   ],  # anger
+  [0,    0,    0,    0,    0.35, 0.35, 0,   0,    0.7 ]   # sadness
+]
+
+Step 4: Save vectorizer
+joblib.dump(vectorizer, 'models/vectorizer_scenario_2.joblib')
+
+Later, for new text "sangat bahagia" (prediction):
+new_vector = vectorizer.transform(["sangat bahagia"])
+Result: [0.15, 0.35, 0, 0, 0, 0, 0.5, 0, 0] (same as training!)
+
+
+================================================================================
+PART 5: MODEL TRAINING - ALGORITHMS EXPLAINED
+================================================================================
+
+File: src/model_trainer.py
+
+After converting text to numeric vectors, machine learning models learn to
+classify emotions. Two algorithms are used: Naive Bayes and SVM.
+
+
+ALGORITHM 1: NAIVE BAYES MULTINOMIAL
+====================================
+
+Theory:
+-------
+Naive Bayes uses probability and Bayes' theorem to predict emotion.
+
+Formula:
+P(emotion | features) = P(features | emotion) × P(emotion) / P(features)
+
+Where:
+- P(emotion | features) = Probability emotion given text (what we want)
+- P(features | emotion) = Probability features given emotion (from training)
+- P(emotion) = How common each emotion in training set
+- P(features) = Probability of features (normalizing constant)
+
+Key assumption: Word frequencies are independent (naive assumption, not always true)
+
+Code from model_trainer.py (lines 11-25):
+```
+from sklearn.naive_bayes import MultinomialNB
+
+def train_naive_bayes(X_train, y_train, alpha=1.0):
+    """Train Multinomial Naive Bayes classifier"""
+    model = MultinomialNB(alpha=alpha)
+    model.fit(X_train, y_train)
+    return model
+```
+
+Training process:
+Input: X_train (3520 × 5000 features), y_train (3520 labels)
+Model learns: For each emotion, distribution of word frequencies
+Output: Trained model with probability tables
+
+
+DETAILED EXAMPLE:
+-----------------
+
+Training set emotions:
+- happy: 800 texts
+- anger: 900 texts
+- sadness: 850 texts
+- fear: 600 texts
+- love: 370 texts
+Total: 3520 texts
+
+Naive Bayes learns probabilities:
+
+P(emotion):
+- P(happy) = 800 / 3520 = 0.227
+- P(anger) = 900 / 3520 = 0.256
+- P(sadness) = 850 / 3520 = 0.242
+- P(fear) = 600 / 3520 = 0.170
+- P(love) = 370 / 3520 = 0.105
+
+P(word | emotion):
+For each word in vocabulary, count how often it appears in each emotion:
+
+Word 'bahagia' (happy):
+- Appears in 200 happy texts out of 800
+- P(bahagia | happy) = 200 / 800 = 0.25
+
+Word 'bahagia' in anger:
+- Appears in 20 anger texts out of 900
+- P(bahagia | anger) = 20 / 900 = 0.022
+
+Word 'bahagia' in all emotions much less frequent
+
+
+PREDICTION PROCESS:
+-------------------
+
+New text: "sangat bahagia"
+Features: [sangat=0.15, bahagia=0.35, others=0]
+
+Calculate probability for each emotion:
+
+P(happy | text) ∝ P(sangat | happy) × P(bahagia | happy) × P(happy)
+                = 0.10 × 0.25 × 0.227
+                = 0.00568
+
+P(anger | text) ∝ P(sangat | anger) × P(bahagia | anger) × P(anger)
+               = 0.08 × 0.022 × 0.256
+               = 0.000447
+
+P(sadness | text) ∝ P(sangat | sadness) × P(bahagia | sadness) × P(sadness)
+                  = 0.09 × 0.018 × 0.242
+                  = 0.000392
+
+P(fear | text) ∝ P(sangat | fear) × P(bahagia | fear) × P(fear)
+              = 0.07 × 0.010 × 0.170
+              = 0.000119
+
+P(love | text) ∝ P(sangat | love) × P(bahagia | love) × P(love)
+              = 0.09 × 0.020 × 0.105
+              = 0.000189
+
+Highest probability: P(happy) ≈ 0.00568
+Prediction: HAPPY ✓
+
+
+ALPHA PARAMETER (SMOOTHING):
+---------------------------
+
+Problem: If word never appears in training emotion, P(word | emotion) = 0
+This makes entire probability = 0 (incorrect)
+
+Solution: Laplace smoothing with alpha parameter
+
+Without smoothing:
+P(word | emotion) = count(word in emotion) / total_words_in_emotion
+
+With smoothing:
+P(word | emotion) = (count + alpha) / (total_words + alpha × vocabulary_size)
+
+Example:
+- 'bahagia' never appeared in anger texts: count = 0
+- Without smoothing: P(bahagia | anger) = 0 / 900 = 0 (problem!)
+- With alpha = 1.0: P(bahagia | anger) = (0 + 1) / (900 + 1×5000) = 0.0002
+
+effect of alpha values:
+- alpha = 0: No smoothing (can cause 0 probabilities)
+- alpha = 0.5: Moderate smoothing (Scenario 2 uses this)
+- alpha = 1.0: Strong smoothing (Scenario 1, 3 use this)
+- alpha = 0.1: Aggressive smoothing (Scenario 4 uses this, risks overfitting)
+
+Why Scenario 2 uses alpha = 0.5:
+- Already did aggressive preprocessing (removed stopwords, stemmed)
+- Needs moderate smoothing to generalize well
+
+
+ALGORITHM 2: SUPPORT VECTOR MACHINE (SVM)
+==========================================
+
+Theory:
+-------
+SVM finds a hyperplane (decision boundary) that maximally separates emotions
+in feature space.
+
+2D visualization (simplified):
+
+Feature space with 2 words: 'sangat' (x-axis) and 'marah' (y-axis)
+
+      | sadness
+      |
+      |     happiness
+------|---------------  decision boundary
+      |
+      | anger
+      |
+      +------------------
+
+Goal: Find line (hyperplane in high dimensions) maximizing margin between classes
+
+Code from model_trainer.py (lines 27-43):
+```
+from sklearn.svm import LinearSVC
+
+def train_svm(X_train, y_train, C=1.0, kernel='linear', max_iter=1000):
+    """Train SVM classifier"""
+    model = LinearSVC(C=C, max_iter=max_iter, random_state=Config.RANDOM_STATE)
+    model.fit(X_train, y_train)
+    return model
+```
+
+Parameters:
+- C: Regularization parameter (tradeoff between margin and misclassification)
+- max_iter: Maximum iterations for optimization
+- kernel: Type of decision boundary (linear, rbf, etc.)
+
+
+C PARAMETER (REGULARIZATION):
+----------------------------
+
+C controls strictness of the margin:
+
+C = 0.1 (very lenient):
+- Model tolerates more misclassifications
+- Simpler decision boundary
+- Risk of underfitting
+
+C = 1.0 (balanced) - Scenario 1, 2, 3 use this:
+- Balances margin and errors
+- Good generalization
+
+C = 10.0 (strict) - Scenario 4 uses this:
+- Model punishes misclassifications heavily
+- Complex decision boundary
+- Risk of overfitting
+
+Why Scenario 4 overfits with C=10.0:
+- Also uses trigram features (7000 features, very sparse)
+- Aggressive C value forces model to memorize training data
+- Doesn't generalize to test data
+- Result: F1-Score drops to 0.6172 (lower than Scenario 2's 0.6552)
+
+
+TRAINING PROCESS:
+-----------------
+
+Code execution from model_trainer.py:
+
+1. Prepare training data:
+   X_train shape: (3520, 5000)  # 3520 texts, 5000 features
+   y_train shape: (3520,)       # 3520 labels (happy, anger, etc.)
+
+2. Create and train model:
+   model = LinearSVC(C=1.0, max_iter=500, random_state=42)
+   model.fit(X_train, y_train)
+
+3. SVM optimization problem solved:
+   Minimize: (1/2) × ||w||^2 + C × Σ(errors)
+
+   Where:
+   - w = weight vector (direction of decision boundary)
+   - errors = misclassifications on training set
+   - C = how much to penalize errors
+
+4. Model learns:
+   - Weight vector w (which features matter)
+   - Bias term b (intercept)
+
+5. Save model:
+   joblib.dump(model, 'models/scenario_2_svm.joblib')
+   Model is ready for predictions
+
+
+PREDICTION WITH SVM:
+-------------------
+
+New text: "sangat bahagia"
+Features: [0.15, 0.35, 0, 0, ...]
+
+Linear decision function:
+score_emotion = w · features + b
+
+Example learned weights:
+- happy class: w_happy = [0.5, 0.6, -0.1, 0.1, ...]
+               score_happy = 0.5×0.15 + 0.6×0.35 + ... = 0.275
+
+- anger class: w_anger = [-0.4, -0.5, 0.3, 0.2, ...]
+              score_anger = -0.4×0.15 + -0.5×0.35 + ... = -0.235
+
+All emotions calculated similarly
+
+Highest score: happy (0.275)
+Prediction: HAPPY ✓
+
+
+WHY SVM > NAIVE BAYES (Performance):
+-----------------------------------
+
+Results from experiment:
+- Scenario 1: NB=0.6051, SVM=0.6509 (+0.0458)
+- Scenario 2: NB=0.6236, SVM=0.6552 (+0.0316)
+- Scenario 3: NB=0.6187, SVM=0.6204 (+0.0017)
+- Scenario 4: NB=0.5887, SVM=0.6172 (+0.0285)
+
+Reasons:
+1. Naive Bayes assumes feature independence (not true for words)
+   - "sangat bahagia" features are correlated
+   - SVM doesn't make this assumption
+
+2. SVM finds complex decision boundaries (through hyperplane)
+   - More flexible than probability-based approach
+   - Can capture non-linear patterns better
+
+3. SVM optimizes margin (separation between classes)
+   - Focuses on hard-to-classify examples
+   - Better generalization
+
+4. TF-IDF features work better with SVM
+   - Dimensionality advantage (5000 dimensions)
+   - SVM performs well in high dimensions
+
+
+TRADE-OFFS:
+-----------
+
+Naive Bayes advantages:
+- Very fast training (linear time)
+- Works well with small datasets
+- Interpretable probability outputs
+- Lower memory requirement
+
+SVM advantages:
+- Better accuracy on complex data
+- Handles high-dimensional features well
+- Robust to outliers
+- Good generalization
+
+SVM disadvantages:
+- Slower training (quadratic time)
+- Harder to interpret (just scores)
+- Requires hyperparameter tuning (C value)
+
+For this project: SVM wins because sentiment has complex patterns
+
+
+================================================================================
+PART 6: DATA SPLITTING AND TRAINING ORCHESTRATION
+================================================================================
+
+File: src/model_trainer.py
+
+Before training, data must be split into training and testing sets.
+
+THE PROBLEM:
+-----------
+If we train and test on same data, model memorizes training data = bad generalization
+We need separate test set to fairly evaluate model
+
+CODE:
+----
+src/model_trainer.py (lines 45-63):
+```
+def split_data(X, y, test_size=None, random_state=None):
+    from sklearn.model_selection import train_test_split
+
+    if test_size is None:
+        test_size = Config.TEST_SIZE      # 0.2 (20%)
+    if random_state is None:
+        random_state = Config.RANDOM_STATE # 42
+
+    return train_test_split(
+        X, y,
+        test_size=test_size,
+        random_state=random_state,
+        stratify=y  # IMPORTANT: Keep class distribution
+    )
+```
+
+Parameters:
+- test_size=0.2: Use 80% for training, 20% for testing
+- random_state=42: Always same split (reproducible)
+- stratify=y: Keep emotion distribution in both train and test
+
+
+STRATIFIED SPLIT IMPORTANCE:
+----------------------------
+
+If not stratified (random split):
+Possible scenario (bad):
+- Train set: 500 happy, 50 anger, 50 sadness (imbalanced)
+- Test set: 500 anger, 50 happy, 50 sadness (different distribution!)
+Model trained on happy-heavy data won't generalize to anger-heavy test set
+
+With stratification (what we use):
+Original distribution:
+- happy: 1017 (23.1%)
+- anger: 1101 (25.0%)
+- sadness: 997 (22.7%)
+- fear: 649 (14.7%)
+- love: 637 (14.5%)
+
+Train set (80%, 3520 samples):
+- happy: ~814 (23.1%)
+- anger: ~880 (25.0%)
+- sadness: ~798 (22.7%)
+- fear: ~519 (14.7%)
+- love: ~509 (14.5%)
+
+Test set (20%, 881 samples):
+- happy: ~203 (23.1%)
+- anger: ~220 (25.0%)
+- sadness: ~199 (22.7%)
+- fear: ~130 (14.7%)
+- love: ~128 (14.5%)
+
+Both sets have same proportion of each emotion = fair evaluation
+
+
+COMPLETE TRAINING ORCHESTRATION:
+--------------------------------
+
+Called from app.py when user starts training:
+
+```
+from src.model_trainer import train_all_scenarios
+
+def train_all_scenarios(uploaded_file, text_col, label_col):
+```
+
+Step 1: Load and prepare data
+```
+df = load_data(uploaded_file)
+texts, labels = prepare_data(df, text_col, label_col)
+# texts: list of 4401 tweet strings
+# labels: list of 4401 emotion strings
+```
+
+Step 2: For each scenario (4 total):
+```
+for scenario_id, scenario_config in Config.SCENARIOS.items():
+    print(f"Training {scenario_config['name']}")
+
+    # Step 2a: Preprocess
+    preprocessing_config = scenario_config['preprocessing']
+    preprocessed_texts = preprocess_texts(texts, preprocessing_config)
+
+    # Step 2b: Vectorize
+    vectorization_config = scenario_config['vectorization']
+    X, vectorizer = fit_transform_features(
+        preprocessed_texts,
+        method=vectorization_config['method'],          # 'tfidf' or 'count'
+        max_features=vectorization_config['max_features'],  # 3000, 5000, or 7000
+        ngram_range=tuple(vectorization_config['ngram_range'])  # (1,1), (1,2), or (1,3)
+    )
+
+    # Step 2c: Split data
+    X_train, X_test, y_train, y_test = split_data(X, labels)
+    # X_train: (3520, 5000) sparse matrix
+    # X_test: (881, 5000) sparse matrix
+    # y_train: (3520,) array of labels
+    # y_test: (881,) array of labels
+
+    # Step 2d: Train both models
+    models_config = scenario_config['models']
+
+    # Train Naive Bayes
+    nb_model = train_naive_bayes(
+        X_train, y_train,
+        alpha=models_config['naive_bayes']['alpha']
+    )
+
+    # Train SVM
+    svm_model = train_svm(
+        X_train, y_train,
+        C=models_config['svm']['C'],
+        kernel=models_config['svm']['kernel'],
+        max_iter=models_config['svm']['max_iter']
+    )
+
+    # Step 2e: Save models
+    nb_path = f"models/{scenario_id}_nb.joblib"
+    svm_path = f"models/{scenario_id}_svm.joblib"
+    vectorizer_path = f"models/vectorizer_{scenario_id}.joblib"
+
+    save_model(nb_model, nb_path)
+    save_model(svm_model, svm_path)
+    save_vectorizer(vectorizer, vectorizer_path)
+
+    # Store for evaluation
+    results[scenario_id] = {
+        'nb_model': nb_model,
+        'svm_model': svm_model,
+        'vectorizer': vectorizer,
+        'X_test': X_test,
+        'y_test': y_test
+    }
+```
+
+TIMELINE:
+Scenario 1: ~2 seconds
+Scenario 2: ~3 seconds (more preprocessing)
+Scenario 3: ~3 seconds (count vectorizer)
+Scenario 4: ~4 seconds (trigram)
+
+Total training time: ~12-15 seconds for all 4 × 2 = 8 models
+
+
+================================================================================
+PART 7: MODEL EVALUATION AND SELECTION
+================================================================================
+
+File: src/evaluator.py
+
+After training 8 models, evaluate which performs best.
+
+THE PROBLEM:
+-----------
+How do we know which model is best? Need metrics to compare.
+
+FOUR EVALUATION METRICS:
+------------------------
+
+For each model on test set (881 test samples), calculate:
+
+1. ACCURACY
+   Formula: Accuracy = (TP + TN) / (TP + TN + FP + FN)
+
+   Translation: How many predictions were correct?
+
+   Example:
+   - Correct predictions: 565
+   - Total predictions: 881
+   Accuracy = 565 / 881 = 0.6413 (64.13%)
+
+   Interpretation: 64.13% of predictions were right
+
+   Code:
+   ```
+   from sklearn.metrics import accuracy_score
+   accuracy = accuracy_score(y_test, predictions)
+   ```
+
+   Problem: Doesn't work well with imbalanced classes
+   - If you predict everything as "happy" in imbalanced dataset, accuracy looks good
+
+   Use when: Classes are balanced
+
+
+2. PRECISION
+   Formula: Precision = TP / (TP + FP)
+
+   Translation: Of the texts you predicted as emotion X, how many were correct?
+
+   Example for 'happy' emotion:
+   - Predicted as happy: 300
+   - Actually happy: 200
+   - Precision = 200 / 300 = 0.667 (66.7%)
+
+   Interpretation: When model says "happy", it's right 66.7% of the time
+
+   Code:
+   ```
+   from sklearn.metrics import precision_score
+   precision = precision_score(y_test, predictions, average='weighted')
+   # 'weighted' = average across all classes, weighted by support
+   ```
+
+   Use when: You want to minimize false positives (false alarms)
+
+
+3. RECALL
+   Formula: Recall = TP / (TP + FN)
+
+   Translation: Of texts actually emotion X, how many did you find?
+
+   Example for 'anger' emotion:
+   - Actually angry: 220
+   - Detected as angry: 162
+   - Recall = 162 / 220 = 0.736 (73.6%)
+
+   Interpretation: Catch 73.6% of actual angry texts
+
+   Code:
+   ```
+   from sklearn.metrics import recall_score
+   recall = recall_score(y_test, predictions, average='weighted')
+   ```
+
+   Use when: You want to minimize false negatives (missing cases)
+
+
+4. F1-SCORE (PRIMARY METRIC)
+   Formula: F1 = 2 × (Precision × Recall) / (Precision + Recall)
+
+   Translation: Harmonic mean of precision and recall
+
+   Example:
+   Precision = 0.668 (weighted average)
+   Recall = 0.648 (weighted average)
+   F1 = 2 × (0.668 × 0.648) / (0.668 + 0.648) = 0.658
+
+   Interpretation: Balanced measure between precision and recall
+   - Focuses on minority classes
+   - Doesn't assume balanced dataset
+
+   Code:
+   ```
+   from sklearn.metrics import f1_score
+   f1 = f1_score(y_test, predictions, average='weighted')
+   ```
+
+   Why best for this project:
+   - Dataset has class imbalance (fear=14.7%, love=14.5%)
+   - F1-Score handles imbalance better than accuracy
+   - Penalizes both false positives and false negatives
+
+   **This is why we select best model by F1-Score**
+
+
+CONFUSION MATRIX:
+-----------------
+
+Shows breakdown of correct and incorrect predictions per emotion.
+
+Example from best model (Scenario 2 - SVM):
+
+Predicted →
+      Anger Happy Sadness Fear Love
+     ┌───────────────────────────┬
+Act Ang │ 162   18    24    7    9  │ Total actual: 220
+ual Hap │  20  108    51   13   12  │ Total actual: 204
+    Sad │  27   38   133    2    0  │ Total actual: 200
+    Fea │  21   23     6   64   16  │ Total actual: 130
+    Lov │   7   12     1   17   90  │ Total actual: 127
+    └───────────────────────────┘
+
+Reading:
+- Row = what emotion was actually in text
+- Column = what emotion model predicted
+- Diagonal (162, 108, 133, 64, 90) = correct predictions
+- Off-diagonal = errors
+
+Example error: 38 sadness texts predicted as happy
+- User wrote something sad: "Aku sedih dan kecewa"
+- Model predicted: happy
+- Reason: Overlapping vocabulary with happy
+
+
+Per-emotion metrics from confusion matrix:
+
+For Anger (row 1):
+- TP (true positive) = 162 (correctly identified anger)
+- FN (false negative) = 18+24+7+9 = 58 (anger misclassified as other)
+- Recall = 162 / (162+58) = 162/220 = 0.736
+
+For Happy (column 2):
+- TP = 108
+- FP (false positive) = 20+38+23+12 = 93 (other emotions predicted as happy)
+- Precision = 108 / (108+93) = 108/201 = 0.537
+
+Analysis of errors:
+- Sadness often confused with Happy (38 errors) = overlapping features
+- Happy has lowest precision (0.537) = most confused emotion
+- Love has best metrics (F1=0.7958) = distinct vocabulary
+- Fear is hard to detect (low recall) = rare emotion
+
+
+CODE FOR EVALUATION:
+-------------------
+
+src/evaluator.py (lines 1-80):
+
+```
+def evaluate_model(model, X_test, y_test):
+    """Evaluate single model"""
+    from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
+
+    # Make predictions
+    predictions = model.predict(X_test)
+
+    # Calculate metrics
+    metrics = {
+        'accuracy': accuracy_score(y_test, predictions),
+        'precision': precision_score(y_test, predictions, average='weighted', zero_division=0),
+        'recall': recall_score(y_test, predictions, average='weighted', zero_division=0),
+        'f1_score': f1_score(y_test, predictions, average='weighted', zero_division=0),
+        'confusion_matrix': confusion_matrix(y_test, predictions),
+        'per_class': classification_report(y_test, predictions, output_dict=True)
+    }
+
+    return metrics, predictions
+```
+
+This is called for all 8 models:
+
+```
+results = {}
+
+for scenario_id in [1, 2, 3, 4]:
+    for algorithm in ['naive_bayes', 'svm']:
+        model = load trained model
+        metrics, predictions = evaluate_model(model, X_test, y_test)
+
+        results[f"{scenario_id}_{algorithm}"] = {
+            'f1_score': metrics['f1_score'],
+            'accuracy': metrics['accuracy'],
+            'precision': metrics['precision'],
+            'recall': metrics['recall'],
+            'confusion_matrix': metrics['confusion_matrix']
+        }
+```
+
+COMPARISON TABLE:
+-----------------
+
+All 8 models results:
+
+Scenario 1 - NB:      F1=0.6051, Accuracy=0.6050
+Scenario 1 - SVM:     F1=0.6509, Accuracy=0.6368
+Scenario 2 - NB:      F1=0.6236, Accuracy=0.6198
+Scenario 2 - SVM:     F1=0.6552, Accuracy=0.6413  ← BEST (max F1-Score)
+Scenario 3 - NB:      F1=0.6187, Accuracy=0.6141
+Scenario 3 - SVM:     F1=0.6204, Accuracy=0.6005
+Scenario 4 - NB:      F1=0.5887, Accuracy=0.5823
+Scenario 4 - SVM:     F1=0.6172, Accuracy=0.6027
+
+
+BEST MODEL SELECTION:
+-------------------
+
+Code src/evaluator.py (lines ~150):
+
+```
+def select_best_model(comparison_data):
+    """Select model with highest F1-Score"""
+    best = max(comparison_data, key=lambda x: x['f1_score'])
+    return best
+```
+
+Result:
+{
+    'scenario': 'Skenario 2: Preprocessing Lanjutan',
+    'scenario_id': 'scenario_2',
+    'algorithm': 'SVM',
+    'algorithm_id': 'svm',
+    'f1_score': 0.6552,
+    'accuracy': 0.6413,
+    'model_path': 'models/scenario_2_svm.joblib',
+    'vectorizer_path': 'models/vectorizer_scenario_2.joblib',
+    'config': {...}
+}
+
+
+SAVING BEST MODEL METADATA:
+--------------------------
+
+Code src/evaluator.py (lines ~200):
+
+```
+def save_best_model_metadata(best_model_info):
+    """Save best model info for later use"""
+    metadata = {
+        'best_model': best_model_info,
+        'timestamp': datetime.now().isoformat(),
+        'metrics': {
+            'f1_score': best_model_info['f1_score'],
+            'accuracy': best_model_info['accuracy'],
+            'precision': best_model_info['precision'],
+            'recall': best_model_info['recall']
+        }
+    }
+
+    with open('models/best_model_metadata.json', 'w') as f:
+        json.dump(metadata, f, indent=2)
+```
+
+File saved: models/best_model_metadata.json
+
+This metadata is loaded during prediction phase to know which model to use
+
+
+================================================================================
+PART 8: PREDICTION PROCESS - DETAILED WALKTHROUGH
+================================================================================
+
+File: src/predictor.py
+
+When user enters new text, here's exactly what happens:
+
+STEP-BY-STEP PREDICTION:
+------------------------
+
+Input: User enters 5 texts in web interface:
+1. "Aku sangat bahagia dengan hasil ini"
+2. "Ini membuatku marah sekali"
+3. "Aku sedih karena kehilangan"
+4. "Takut dengan situasi ini"
+5. "Aku mencintai keluargaku"
+
+Flask route /predict calls predictor.py:
+
+```
+from src.predictor import predict_with_best_model
+
+results = predict_with_best_model(texts)
+# Returns: ['happy', 'anger', 'sadness', 'fear', 'love']
+```
+
+Step 1: Load best model and vectorizer (happens once)
+-------
+
+src/predictor.py (lines 6-37):
+
+```
+def load_best_model():
+    # Load metadata which tells us which model is best
+    metadata = load_best_model_metadata()
+    # metadata['best_model']['model_path'] = 'models/scenario_2_svm.joblib'
+    # metadata['best_model']['vectorizer_path'] = 'models/vectorizer_scenario_2.joblib'
+    # metadata['best_model']['config'] = {...preprocessing config...}
+
+    model = load_model(best_model_info['model_path'])
+    # Loads LinearSVC model with learned weights
+
+    vectorizer = load_vectorizer(best_model_info['vectorizer_path'])
+    # Loads TfidfVectorizer with trained vocabulary
+
+    config = best_model_info['config']
+    # Preprocessing configuration to apply
+
+    return model, vectorizer, config, metadata
+```
+
+
+Step 2: Preprocess each text (using exact same config as training)
+-----
+
+src/predictor.py (lines 39-61):
+
+```
+def predict_single(text, model, vectorizer, preprocessing_config):
+    # CRITICAL: Must use SAME preprocessing config as training!
+
+    # Text 1: "Aku sangat bahagia dengan hasil ini"
+    # preprocessing_config from Scenario 2:
+    # {
+    #   'lowercase': True,
+    #   'remove_punctuation': True,
+    #   'remove_numbers': True,
+    #   'remove_stopwords': True,  ← Important!
+    #   'stemming': True           ← Important!
+    # }
+
+    processed_text = preprocess_texts([text], preprocessing_config)[0]
+    # "Aku sangat bahagia dengan hasil ini"
+    #  ↓ (lowercase)
+    # "aku sangat bahagia dengan hasil ini"
+    #  ↓ (remove_punctuation - no punctuation in this text)
+    # "aku sangat bahagia dengan hasil ini"
+    #  ↓ (remove_numbers - no numbers)
+    # "aku sangat bahagia dengan hasil ini"
+    #  ↓ (remove_stopwords - removes 'aku', 'dengan')
+    # "sangat bahagia hasil ini"
+    #  ↓ (stemming)
+    # "sangat bahagia hasil ini"
+
+    # Result: "sangat bahagia hasil ini"
+```
+
+Critical point: If preprocessing is different:
+- Feature position changes
+- Vector components wrong
+- Model prediction incorrect (garbage in = garbage out)
+
+
+Step 3: Vectorize using loaded vectorizer
+----------
+
+src/feature_extractor.py (lines 51-62):
+
+```
+def transform_features(texts, vectorizer):
+    # texts = ["sangat bahagia hasil ini"]
+    # vectorizer = loaded from training
+
+    return vectorizer.transform(texts)
+    # Returns sparse matrix (1, 5000) with TF-IDF values
+```
+
+The vectorizer has learned vocabulary from training:
+{
+  'sangat': index 0,
+  'bahagia': index 1,
+  'hasil': index 42,
+  'ini': index 156,
+  'sangat bahagia': index 4200,  # bigram
+  ...
+  (5000 total)
+}
+
+Text "sangat bahagia hasil ini" converted to:
+[0.3, 0.3, 0, ..., 0, 0.2, ..., 0, 0.15, ..., 0.4, 0, ..., 0]
+                           ↑ hasil ↑ ini      ↑ 'sangat bahagia' bigram
+
+Real TF-IDF values (example):
+- Index 0 ('sangat'): 0.30
+- Index 1 ('bahagia'): 0.30
+- Index 42 ('hasil'): 0.20
+- Index 156 ('ini'): 0.15
+- Index 4200 ('sangat bahagia'): 0.40
+- All others: 0
+
+
+Step 4: Predict emotion using model
+---
+
+```
+# model = trained LinearSVC from Scenario 2
+# features = [0.3, 0.3, 0, ..., 0.2, ..., 0.15, ..., 0.4, ...]
+
+prediction = model.predict(features)
+# Returns: array(['happy'])
+
+emotion = prediction[0]
+# emotion = 'happy'
+```
+
+What happens internally in SVM:
+For each emotion class, calculate score:
+
+score_happy = w_happy · features + b_happy
+            = w[0]×0.3 + w[1]×0.3 + w[42]×0.2 + w[156]×0.15 + w[4200]×0.4 + ...
+            = 0.35 + 0.28 + 0.08 + 0.07 + 0.60 + ...
+            = 1.38 (highest)
+
+score_anger = w_anger · features + b_anger = 0.15 (lower)
+score_sadness = w_sadness · features + b_sadness = 0.22 (lower)
+score_fear = w_fear · features + b_fear = -0.10 (negative)
+score_love = w_love · features + b_love = 0.95 (second)
+
+Prediction: emotion with highest score = 'happy' (1.38) ✓
+
+
+Step 5: Return prediction to web interface
+----
+
+Result displayed:
+Text: "Aku sangat bahagia dengan hasil ini"
+Predicted Emotion: 💚 HAPPY
+Confidence: High (score 1.38 >> others)
+
+
+COMPLETE EXAMPLE WITH ALL 5 TEXTS:
+-----------------------------------
+
+Input texts:
+1. "Aku sangat bahagia dengan hasil ini"
+2. "Ini membuatku marah sekali"
+3. "Aku sedih karena kehilangan"
+4. "Takut dengan situasi ini"
+5. "Aku mencintai keluargaku"
+
+Process each:
+```
+for text in texts:
+    processed = preprocess_texts([text], config)  # Same as training
+    features = vectorizer.transform(processed)     # Same vocabulary
+    emotion = model.predict(features)             # Same model
+    results.append(emotion)
+```
+
+Output:
+1. "Aku sangat bahagia dengan hasil ini" → 💚 HAPPY
+2. "Ini membuatku marah sekali" → ❤️ ANGER
+3. "Aku sedih karena kehilangan" → 💙 SADNESS
+4. "Takut dengan situasi ini" → 🟨 FEAR
+5. "Aku mencintai keluargaku" → 💗 LOVE
+
+
+BATCH PREDICTION CODE:
+----------------------
+
+src/predictor.py (lines 63-87):
+
+```
+def predict_batch(texts, model, vectorizer, preprocessing_config):
+    # Batch process multiple texts (more efficient than one-by-one)
+
+    # Preprocess all at once
+    processed_texts = preprocess_texts(texts, preprocessing_config)
+    # ['sangat bahagia hasil', 'marah sekali', ...]
+
+    # Vectorize all at once
+    features = transform_features(processed_texts, vectorizer)
+    # (5, 5000) sparse matrix - 5 texts, 5000 features
+
+    # Predict all at once
+    predictions = model.predict(features)
+    # array(['happy', 'anger', 'sadness', 'fear', 'love'])
+
+    return predictions
+```
+
+Main function called from app.py:
+
+```
+def predict_with_best_model(texts):
+    model, vectorizer, config, metadata = load_best_model()
+
+    if model is None:
+        return None
+
+    predictions = predict_batch(texts, model, vectorizer, config['preprocessing'])
+
+    return predictions
+```
+
+
+WHY SAME PREPROCESSING IS CRITICAL:
+-----------------------------------
+
+Example of what goes wrong:
+
+Wrong approach (using different preprocessing):
+Training: No stopword removal, no stemming
+Test: Removed stopwords and stemmed
+
+Training learned:
+- vocabulary includes 'aku', 'dengan', 'yang' (stopwords)
+- vocabulary includes 'bahagia', 'kebahagiaan' (inflected forms)
+- word 'bahagia' has weight 0.5 from learning
+
+Test preprocesses same text differently:
+- 'aku' removed (stopword removed in test, but existed in training vocab!)
+- 'kebahagiaan' stemmed to 'bahagia'
+- Creates features using stemmed form
+- But training never saw stem form for this word!
+- Feature vector completely different
+- Model prediction = garbage
+
+Correct approach (what we do):
+Training preprocessing saved in config.json:
+{
+  'lowercase': True,
+  'remove_punctuation': True,
+  'remove_numbers': True,
+  'remove_stopwords': True,
+  'stemming': True
+}
+
+Prediction uses EXACT same config
+→ Same preprocessing
+→ Same feature vector
+→ Correct prediction
+
+
+================================================================================
+PART 9: CONFIGURATION SYSTEM - DETAILED ANALYSIS
+================================================================================
+
+File: config.py
+
+All scenario configurations centralized in one file for consistency and testing
+
+CONFIG STRUCTURE:
+-----------------
+
+SCENARIOS = {
+    'scenario_1': { ... },
+    'scenario_2': { ... },
+    'scenario_3': { ... },
+    'scenario_4': { ... }
+}
+
+Each scenario has:
+1. Metadata
+2. Preprocessing config
+3. Vectorization config
+4. Model hyperparameters
+
+
+SCENARIO 1: KONFIGURASI DASAR (BASELINE)
+=========================================
+
+Purpose: Minimal preprocessing to establish baseline performance
+
+config.py lines 39-57:
+
+```
+'scenario_1': {
+    'name': 'Skenario 1: Konfigurasi Dasar',
+    'description': 'Preprocessing dasar dengan TF-IDF unigram',
+    'preprocessing': {
+        'lowercase': True,              # Aku → aku
+        'remove_punctuation': True,     # !!!! → (removed)
+        'remove_numbers': True,         # 123 → (removed)
+        'remove_stopwords': False,      # 'adalah', 'yang' kept
+        'stemming': False               # 'bahagia' stays 'bahagia'
+    },
+    'vectorization': {
+        'method': 'tfidf',              # TF-IDF weighting
+        'max_features': 3000,           # Small vocabulary
+        'ngram_range': (1, 1)           # Only single words
+    },
+    'models': {
+        'naive_bayes': {'alpha': 1.0},  # Standard smoothing
+        'svm': {
+            'C': 1.0,                   # Standard regularization
+            'kernel': 'linear',
+            'max_iter': 1000            # More iterations to converge
+        }
+    }
+}
+```
+
+Characteristics:
+- Vocabulary: 3000 words (includes stopwords)
+- Features: Single words only
+- Training time: ~1-2 seconds
+
+Expected behavior:
+- Baseline performance
+- Large feature space (includes noise)
+- Ready for comparison
+
+Results: F1-Score
+- NB: 0.6051
+- SVM: 0.6509
+
+
+SCENARIO 2: PREPROCESSING LANJUTAN (BEST MODEL) ✓
+=================================================
+
+Purpose: Advanced preprocessing with balanced features
+
+config.py lines 59-77:
+
+```
+'scenario_2': {
+    'name': 'Skenario 2: Preprocessing Lanjutan',
+    'description': 'Preprocessing lengkap dengan TF-IDF bigram',
+    'preprocessing': {
+        'lowercase': True,              # Full cleaning pipeline
+        'remove_punctuation': True,
+        'remove_numbers': True,
+        'remove_stopwords': True,       # ← Aggressive: removes ~100 words
+        'stemming': True                # ← Uses Porter Stemmer
+    },
+    'vectorization': {
+        'method': 'tfidf',              # TF-IDF weighting
+        'max_features': 5000,           # Larger vocabulary
+        'ngram_range': (1, 2)           # 1-gram and 2-gram (bigram!)
+    },
+    'models': {
+        'naive_bayes': {'alpha': 0.5},  # Gentler smoothing (less aggressive)
+        'svm': {
+            'C': 1.0,                   # Balanced regularization
+            'kernel': 'linear',
+            'max_iter': 500             # Fewer iterations (enough for convergence)
+        }
+    }
+}
+```
+
+Why this is BEST:
+1. Preprocessing eliminates noise (removes stopwords)
+2. Stemming groups related words (bahagia, kebahagiaan → same root)
+3. Bigram captures context ("sangat bahagia" ≠ "sangat marah")
+4. TF-IDF weights important words (bahagia gets 0.35, stopwords get ~0)
+5. Hyperparameters balanced (not aggressive, not lenient)
+6. 5000 features is sweet spot (bigger than 3000, smaller than 7000)
+
+Results: F1-Score (HIGHEST)
+- NB: 0.6236
+- SVM: 0.6552 ← BEST OVERALL
+
+Why SVM > NB here:
+- Bigram features correlate with each other (SVM handles this)
+- Naive Bayes assumes independence (false assumption)
+- SVM leverages correlation information
+
+
+SCENARIO 3: COUNT VECTORIZER
+=============================
+
+Purpose: Compare frequency-based vs weighted features
+
+config.py lines 79-97:
+
+```
+'scenario_3': {
+    'name': 'Skenario 3: Count Vectorizer',
+    'description': 'CountVectorizer dengan preprocessing lengkap',
+    'preprocessing': {
+        # Same as Scenario 2
+        'lowercase': True,
+        'remove_punctuation': True,
+        'remove_numbers': True,
+        'remove_stopwords': True,
+        'stemming': True
+    },
+    'vectorization': {
+        'method': 'count',              # ← COUNT instead of TF-IDF!
+        'max_features': 5000,           # Same size
+        'ngram_range': (1, 2)           # Same bigram
+    },
+    'models': {
+        'naive_bayes': {'alpha': 1.0},  # Back to standard smoothing
+        'svm': {
+            'C': 1.0,
+            'kernel': 'linear',
+            'max_iter': 500
+        }
+    }
+}
+```
+
+Only difference: method='count' instead of 'tfidf'
+
+Impact:
+Count vectorizer produces raw frequencies:
+Text: "sangat sangat bahagia"
+- With TF-IDF: sangat=0.3 (normalized), bahagia=0.7
+- With Count: sangat=2, bahagia=1 (raw counts)
+
+Problem with Count:
+- Common words get high scores (shouldn't, just appear often)
+- "yang", "adalah", "di" already filtered by stopwords, ok
+- But "sangat" (very) might appear as frequently as emotion word
+- Model sees raw frequency, not importance
+
+Results: F1-Score (WORSE than Scenario 2)
+- NB: 0.6187 (-0.0049 vs Scenario 2)
+- SVM: 0.6204 (-0.0348 vs Scenario 2)
+
+Conclusion: TF-IDF > Count Vectorizer for emotion classification
+Why: TF-IDF weights rare-but-important words higher
+     Count treats all word appearances equally
+
+
+SCENARIO 4: KONFIGURASI OPTIMAL
+================================
+
+Purpose: Test optimal hyperparameters with higher-order n-grams
+
+config.py lines 99-119:
+
+```
+'scenario_4': {
+    'name': 'Skenario 4: Konfigurasi Optimal',
+    'description': 'TF-IDF trigram dengan hyperparameter optimal',
+    'preprocessing': {
+        # Same as Scenario 2
+        'lowercase': True,
+        'remove_punctuation': True,
+        'remove_numbers': True,
+        'remove_stopwords': True,
+        'stemming': True
+    },
+    'vectorization': {
+        'method': 'tfidf',              # Back to TF-IDF
+        'max_features': 7000,           # ← Increased from 5000
+        'ngram_range': (1, 3)           # ← TRIGRAM (3-word phrases)!
+    },
+    'models': {
+        'naive_bayes': {'alpha': 0.1},  # ← Very aggressive
+        'svm': {
+            'C': 10.0,                  # ← Very strict regularization
+            'kernel': 'linear',
+            'max_iter': 500
+        }
+    }
+}
+```
+
+Changes:
+1. Trigram (1, 3): Includes 1-word, 2-word, 3-word phrases
+   - "sangat sekali bahagia" (very very happy) = one feature
+   - Better context? Or overfitting?
+
+2. 7000 features: More vocabulary, more specific features
+
+3. NB alpha=0.1: Very aggressive smoothing
+   - Strongly penalizes unseen words
+   - Risk: Overconfident predictions
+
+4. SVM C=10.0: Severely punishes training errors
+   - Forces model to memorize training data
+   - Risk: Overfitting to training set
+
+Results: F1-Score (WORST)
+- NB: 0.5887 (-0.0349 vs Scenario 2)
+- SVM: 0.6172 (-0.0380 vs Scenario 2)
+
+Why worse performance?
+
+Analysis:
+- Trigram vocabulary very specific ("sangat sekali bahagia" rare)
+- 7000 features: Much sparser matrix
+  - Training: "sangat sekali bahagia" learned well
+  - Testing: Similar but not identical 3-word combo appears rarely
+  - Model can't generalize
+
+- Hyperparameters too aggressive
+  - NB alpha=0.1: Too confident, overfit
+  - SVM C=10.0: Memorized training set exactly
+  - Both fail on test set (new data)
+
+Lesson: More features ≠ better model
+        Aggressive hyperparameters ≠ best performance
+        Overfitting reduces generalization
+
+
+COMPARISON MATRIX:
+------------------
+
+                Preprocess   Vectorize   Features  N-gram  NB alpha  SVM C  NB F1  SVM F1
+Scenario 1       Basic       TF-IDF      3000      1       1.0       1.0   0.605  0.651
+Scenario 2       Advanced    TF-IDF      5000      2       0.5       1.0   0.624  0.655 ✓
+Scenario 3       Advanced    Count       5000      2       1.0       1.0   0.619  0.620
+Scenario 4       Advanced    TF-IDF      7000      3       0.1       10.0  0.589  0.617
+
+Best: Scenario 2 (balanced in all aspects)
+
+
+========================== CONCLUSION ON SCENARIOS =======================
+
+Scenario 1 (Basic):
+✓ Simple, good baseline
+✗ Less preprocessing → more noise
+
+Scenario 2 (Advanced) ✓ BEST
+✓ Optimal preprocessing (stopwords + stemming)
+✓ Balanced feature count (5000)
+✓ Bigram captures context
+✓ Measured hyperparameters (not too aggressive)
+
+Scenario 3 (Count Vectorizer):
+✓ Tests different vectorization approach
+✗ Count < TF-IDF for imbalanced data
+
+Scenario 4 (Trigram):
+✓ Tests higher-order context
+✗ Trigram too sparse (rare 3-word combos)
+✗ Hyperparameters too aggressive (overfitting)
+
+
+================================================================================
+PART 10: END-TO-END WORKFLOW SUMMARY
+================================================================================
+
+COMPLETE USER JOURNEY:
+
+Time: T=0:00
+User opens web browser: http://localhost:5000/
+Sees landing page
+
+Time: T=0:30
+User navigates to /upload
+Selects file: "Twitter_Emotion_Dataset.csv" (4401 rows)
+Clicks upload
+
+Backend:
+  ↓ Flask receives file
+  ↓ validate_csv() checks format
+  ↓ File saved to uploads/
+  ↓ Data info stored in session
+
+Time: T=1:00
+User selects columns:
+  Text column: "tweet"
+  Label column: "label"
+Clicks continue
+
+Backend:
+  ↓ Session persists column names
+  ↓ Next page loads with options
+
+Time: T=1:30
+User sees training configuration options
+(All 4 scenarios enabled by default)
+Clicks "Start Training"
+
+Backend (CRITICAL TIME HERE):
+  ↓ load_data() → 4401 texts + labels loaded
+  ↓ prepare_data() → 4401 valid samples
+
+  ↓ FOR EACH SCENARIO (1-4):
+  |
+  |  ├─ preprocess_texts()
+  |  |    Texts: 4401 strings → After lowercase, remove punctuation,
+  |  |    remove numbers, (optionally) remove stopwords + stemming
+  |  |    Time: ~2 seconds
+  |  |
+  |  ├─ fit_transform_features()
+  |  |    Features: 4401 strings → (4401, 5000) sparse matrix
+  |  |    Vectorizer learned and saved
+  |  |    Time: ~1 second
+  |  |
+  |  ├─ split_data()
+  |  |    (4401, 5000) → (3520, 5000) train + (881, 5000) test
+  |  |    Stratified split preserves class distribution
+  |  |
+  |  ├─ train_naive_bayes()
+  |  |    Train on (3520, 5000) features
+  |  |    Model learns probability tables
+  |  |    Save to models/scenario_X_nb.joblib
+  |  |    Time: ~0.5 seconds
+  |  |
+  |  └─ train_svm()
+  |      Train on (3520, 5000) features
+  |      Model learns weight vector w
+  |      Save to models/scenario_X_svm.joblib
+  |      Time: ~1 second
+  |
+  ↓ TOTAL TRAINING: ~15 seconds for all scenarios
+
+Time: T=2:00 (after training finishes)
+User sees Evaluation page
+
+Backend:
+  ↓ Evaluate all 8 models on test set (881 samples)
+  ↓ Calculate metrics for each:
+  |  - Accuracy
+  |  - Precision
+  |  - Recall
+  |  - F1-Score
+  |  - Confusion Matrix
+  |  - Per-class metrics
+  |
+  ↓ Table generated:
+  |  Scenario 1 - NB: F1=0.6051
+  |  Scenario 1 - SVM: F1=0.6509
+  |  Scenario 2 - NB: F1=0.6236
+  |  Scenario 2 - SVM: F1=0.6552 ← HIGHLIGHTED AS BEST
+  |  Scenario 3 - NB: F1=0.6187
+  |  Scenario 3 - SVM: F1=0.6204
+  |  Scenario 4 - NB: F1=0.5887
+  |  Scenario 4 - SVM: F1=0.6172
+  |
+  ↓ Save best model metadata:
+     models/best_model_metadata.json
+     {
+       'model_path': 'models/scenario_2_svm.joblib',
+       'vectorizer_path': 'models/vectorizer_scenario_2.joblib',
+       'config': {...}
+     }
+
+User sees:
+  - Comparison table of all models
+  - Best model highlighted: Scenario 2 - SVM (F1=0.6552)
+  - Confusion matrix visualization
+  - Per-class metrics chart
+Clicks "Continue to Prediction"
+
+Time: T=2:30
+User sees Prediction page
+Inputs 5 texts:
+  1. "Aku sangat bahagia dengan hasil ini"
+  2. "Ini membuatku marah sekali"
+  3. "Aku sedih karena kehilangan"
+  4. "Takut dengan situasi ini"
+  5. "Aku mencintai keluargaku"
+Clicks "Predict"
+
+Backend:
+  ↓ load_best_model()
+  |  ├─ Load models/scenario_2_svm.joblib (LinearSVC model)
+  |  ├─ Load models/vectorizer_scenario_2.joblib (TfidfVectorizer)
+  |  └─ Load preprocessing config from metadata
+  |
+  ↓ FOR EACH TEXT:
+  |
+  |  ├─ preprocess_texts([text], config)
+  |  |    CRITICAL: Same preprocessing as training!
+  |  |    Remove URLs, normalize, clean, stemming
+  |  |    Example: "Aku sangat bahagia..." → "sangat bahagia hasil"
+  |  |
+  |  ├─ vectorizer.transform([processed])
+  |  |    Convert to (1, 5000) vector using trained vocabulary
+  |  |    Only features in original vocabulary used
+  |  |
+  |  └─ model.predict([features])
+  |      Calculate scores for each emotion
+  |      Return emotion with highest score
+  |
+  ↓ Results:
+     [
+       'happy',     # Text 1
+       'anger',     # Text 2
+       'sadness',   # Text 3
+       'fear',      # Text 4
+       'love'       # Text 5
+     ]
+
+Time: T=2:45
+User sees Prediction Results:
+
+Text 1: "Aku sangat bahagia dengan hasil ini"
+        Predicted: 💚 HAPPY (confidence: high)
+
+Text 2: "Ini membuatku marah sekali"
+        Predicted: ❤️ ANGER (confidence: high)
+
+Text 3: "Aku sedih karena kehilangan"
+        Predicted: 💙 SADNESS (confidence: medium)
+
+Text 4: "Takut dengan situasi ini"
+        Predicted: 🟨 FEAR (confidence: medium)
+
+Text 5: "Aku mencintai keluargaku"
+        Predicted: 💗 LOVE (confidence: high)
+
+Backend files created:
+- models/scenario_1_nb.joblib (236 KB)
+- models/scenario_1_svm.joblib (119 KB)
+- models/vectorizer_scenario_1.joblib (106 KB)
+- models/scenario_2_nb.joblib (392 KB)
+- models/scenario_2_svm.joblib (197 KB) ← Used for prediction
+- models/vectorizer_scenario_2.joblib (182 KB) ← Used for prediction
+- models/scenario_3_nb.joblib (392 KB)
+- models/scenario_3_svm.joblib (197 KB)
+- models/vectorizer_scenario_3.joblib (143 KB)
+- models/scenario_4_nb.joblib (548 KB)
+- models/scenario_4_svm.joblib (275 KB)
+- models/vectorizer_scenario_4.joblib (259 KB)
+- models/best_model_metadata.json (1.1 KB)
+
+Total models saved: ~3.1 MB on disk
+
+Subsequent predictions (new user session):
+User uploads different CSV
+Trains 8 models again
+Models overwrite previous models
+Vocabulary might be different (different data)
+Previous predictions still use old model (until retraining)
+
+
+================================================================================
+KEY TECHNICAL INSIGHTS
+================================================================================
+
+1. CONSISTENCY IS CRITICAL
+   Training preprocessing → Test preprocessing MUST be identical
+   Training vocabulary → Test vectorization MUST use same vocab
+   Mismatch = garbage predictions
+
+2. PREPROCESSING TRADEOFF
+   More aggressive cleaning → Less noise but risk losing information
+   Scenario 2 balances this optimally (removes common words, preserves emotion)
+
+3. FEATURE ENGINEERING
+   Text → Sparse vectors (mostly zeros)
+   Bag-of-words loses order (SVM > NB because it doesn't assume independence)
+   Bigram adds minimal cost for significant benefit
+
+4. SPARSE MATRICES
+   4401 samples × 5000 features = 22 million values
+   If stored dense: 22M × 8 bytes = 176 MB
+   Sparse storage: Only ~3% non-zero = ~5 MB (efficient!)
+
+5. STRATIFIED SPLIT
+   Preserves class distribution in train/test
+   Prevents evaluation bias
+
+6. METRICS SELECTION
+   Accuracy: Good if classes balanced
+   F1-Score: Good for imbalanced classes (our case)
+   Use F1-Score for emotion (classes 14.5% - 25%)
+
+7. HYPERPARAMETER BALANCE
+   Too lenient (C=0.1): Underfitting
+   Too strict (C=10.0): Overfitting
+   Balanced (C=1.0): Optimal generalization
+
+8. ONLINE vs BATCH PROCESSING
+   Single prediction: Load model once, process single text
+   Batch predictions: Load model once, process multiple texts (more efficient)
+
+9. MODEL PERSISTENCE
+   joblib.dump(): Save trained model to disk
+   joblib.load(): Load model later (no retraining needed)
+   Vectorizer persistence: CRITICAL for consistent vectorization
+
+10. SESSION MANAGEMENT
+    Flask session: Server-side storage
+    Survives across HTTP requests
+    Stores file paths, column names, user choices
+
+
+================================================================================
+DEBUGGING COMMON ISSUES
+================================================================================
+
+Issue 1: Wrong predictions despite good training metrics
+
+Cause: Preprocessing mismatch
+Solution:
+  - Check preprocessing_config in best_model_metadata.json
+  - Ensure predictor.py uses EXACT same config
+  - Compare text before/after preprocessing in both training and prediction
+
+Issue 2: Different predictions with same text
+
+Cause: Different model loaded, or preprocessing changed
+Solution:
+  - Verify best_model_metadata.json points to correct model
+  - Check if models were retrained (vocabulary changed)
+  - Reload model from correct file
+
+Issue 3: Very low accuracy on training data itself
+
+Cause: Dataset too small, classes too imbalanced, or bad preprocessing
+Solution:
+  - Check data quality (missing values, outliers)
+  - Verify label distribution
+  - Try different preprocessing scenarios
+
+Issue 4: Memory error with large CSV
+
+Cause: File too large (> 16MB limit set in config.py)
+Solution:
+  - Split CSV into smaller files
+  - Or increase MAX_CONTENT_LENGTH in config.py
+  - Or filter data (less rows)
+
+Issue 5: "No module named NLTK" error
+
+Cause: NLTK not installed
+Solution:
+  - pip install nltk
+  - Script will auto-download stopwords
+
+Issue 6: Model won't load
+
+Cause: File corrupted or wrong path
+Solution:
+  - Check file exists: ls -la models/best_model_metadata.json
+  - Verify path in metadata.json matches actual files
+  - Retrain models (creates fresh files)
+
+
+================================================================================
+END OF DETAILED TECHNICAL EXPLANATION
+================================================================================
+
+This document provides complete understanding of:
+- How web interface orchestrates machine learning pipeline
+- How text transforms through preprocessing/vectorization
+- How Naive Bayes and SVM algorithms work
+- How models are trained and evaluated
+- How predictions are made on new text
+- Why Scenario 2 is optimal
+
+For any further questions, refer to:
+- Source code comments in src/ directory
+- README.md for quick overview
+- Inline documentation in docstrings
+- config.py for all configuration details
+

@@ -300,38 +300,41 @@ def generate_visualizations(comparison_data, all_results):
     print("  ✓ confusion_matrices.png")
     plt.close()
 
-    # 4. Per-class metrics for best model
-    best_scenario = all_results[best_per_scenario.iloc[0]['scenario_id']]
-    best_algorithm = best_per_scenario.iloc[0]['algorithm_id']
-    best_metrics = best_scenario[best_algorithm]['metrics']
+    # 4. Per-class metrics for all scenarios
+    for scenario_id, scenario_results in all_results.items():
+        # Get best algorithm for this scenario
+        scenario_comparison = df_comparison[df_comparison['scenario_id'] == scenario_id]
+        best_model_row = scenario_comparison.sort_values('f1_score').iloc[-1]
+        best_algorithm = best_model_row['algorithm_id']
+        best_metrics = scenario_results[best_algorithm]['metrics']
 
-    fig, ax = plt.subplots(figsize=(12, 6))
+        fig, ax = plt.subplots(figsize=(12, 6))
 
-    emotions = list(Config.EMOTION_LABELS)
-    precisions = [best_metrics['per_class'].get(e, {}).get('precision', 0) for e in emotions]
-    recalls = [best_metrics['per_class'].get(e, {}).get('recall', 0) for e in emotions]
-    f1_scores = [best_metrics['per_class'].get(e, {}).get('f1_score', 0) for e in emotions]
+        emotions = list(Config.EMOTION_LABELS)
+        precisions = [best_metrics['per_class'].get(e, {}).get('precision', 0) for e in emotions]
+        recalls = [best_metrics['per_class'].get(e, {}).get('recall', 0) for e in emotions]
+        f1_scores = [best_metrics['per_class'].get(e, {}).get('f1_score', 0) for e in emotions]
 
-    x_pos = np.arange(len(emotions))
-    width = 0.25
+        x_pos = np.arange(len(emotions))
+        width = 0.25
 
-    ax.bar(x_pos - width, precisions, width, label='Precision', color='#2ca02c')
-    ax.bar(x_pos, recalls, width, label='Recall', color='#d62728')
-    ax.bar(x_pos + width, f1_scores, width, label='F1-Score', color='#1f77b4')
+        ax.bar(x_pos - width, precisions, width, label='Precision', color='#2ca02c')
+        ax.bar(x_pos, recalls, width, label='Recall', color='#d62728')
+        ax.bar(x_pos + width, f1_scores, width, label='F1-Score', color='#1f77b4')
 
-    ax.set_ylabel('Score', fontsize=11, fontweight='bold')
-    ax.set_title(f'Per-Class Metrics - Best Model\n({best_per_scenario.iloc[0]["scenario"]} - {best_per_scenario.iloc[0]["algorithm"]})',
-                fontsize=13, fontweight='bold')
-    ax.set_xticks(x_pos)
-    ax.set_xticklabels(emotions)
-    ax.legend()
-    ax.set_ylim([0, 1])
-    ax.grid(axis='y', alpha=0.3)
+        ax.set_ylabel('Score', fontsize=11, fontweight='bold')
+        ax.set_title(f'Per-Class Metrics - {best_model_row["scenario"]}\n({best_model_row["algorithm"]})',
+                    fontsize=13, fontweight='bold')
+        ax.set_xticks(x_pos)
+        ax.set_xticklabels(emotions)
+        ax.legend()
+        ax.set_ylim([0, 1])
+        ax.grid(axis='y', alpha=0.3)
 
-    plt.tight_layout()
-    plt.savefig('static/results/per_class_metrics.png', dpi=300, bbox_inches='tight')
-    print("  ✓ per_class_metrics.png")
-    plt.close()
+        plt.tight_layout()
+        plt.savefig(f'static/results/per_class_metrics_{scenario_id}.png', dpi=300, bbox_inches='tight')
+        print(f"  ✓ per_class_metrics_{scenario_id}.png")
+        plt.close()
 
 def save_detailed_results(comparison_data, all_results):
     """Save detailed results to JSON"""
